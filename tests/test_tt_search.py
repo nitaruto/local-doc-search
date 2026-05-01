@@ -618,6 +618,67 @@ def test_plamo_auto_uses_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ("to", "cpu") in calls
 
 
+def test_plamo_retries_non_finite_vectors(monkeypatch: pytest.MonkeyPatch) -> None:
+    from transformers import AutoModel, AutoTokenizer
+
+    calls: list[str] = []
+
+    class FakeTokenizer:
+        pass
+
+    class FakeConfig:
+        max_position_embeddings = 1234
+
+    class FakePlamoModel:
+        config = FakeConfig()
+
+        def __init__(self) -> None:
+            self.document_calls = 0
+            self.query_calls = 0
+
+        def to(self, device: str) -> FakePlamoModel:
+            return self
+
+        def eval(self) -> None:
+            pass
+
+        def encode_document(self, texts: list[str], tokenizer: FakeTokenizer) -> object:
+            import numpy as np
+
+            self.document_calls += 1
+            calls.append(f"document:{self.document_calls}")
+            if self.document_calls == 1:
+                return np.array([[float("nan"), 1.0, 0.0]], dtype=np.float32)
+            return np.array([[3.0, 4.0, 0.0] for _ in texts], dtype=np.float32)
+
+        def encode_query(self, text: list[str], tokenizer: FakeTokenizer) -> object:
+            import numpy as np
+
+            self.query_calls += 1
+            calls.append(f"query:{self.query_calls}")
+            if self.query_calls == 1:
+                return np.array([[float("nan"), 1.0, 0.0]], dtype=np.float32)
+            return np.array([[0.0, 5.0, 0.0]], dtype=np.float32)
+
+    monkeypatch.setattr(
+        AutoTokenizer,
+        "from_pretrained",
+        lambda model_name, trust_remote_code: FakeTokenizer(),
+    )
+    monkeypatch.setattr(
+        AutoModel,
+        "from_pretrained",
+        lambda model_name, trust_remote_code, dtype: FakePlamoModel(),
+    )
+
+    provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
+
+    assert provider.dim == 3
+    assert provider.embed_query("q") == pytest.approx([0.0, 1.0, 0.0])
+    assert calls[:2] == ["document:1", "document:2"]
+    assert calls[-2:] == ["query:1", "query:2"]
+
+
 def test_ensure_plamo_max_length_preserves_existing_value() -> None:
     class FakeConfig:
         max_length = 2048

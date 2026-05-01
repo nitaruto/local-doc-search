@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
@@ -10,6 +11,7 @@ DEFAULT_BATCH_SIZE = 32
 EMBEDDING_BACKEND = "sentence-transformers"
 PLAMO_MODEL = "pfnet/plamo-embedding-1b"
 PLAMO_BACKEND = "plamo-custom"
+PLAMO_RETRY_ATTEMPTS = 5
 DeviceOption = Literal["auto", "cpu", "mps"]
 
 
@@ -110,16 +112,32 @@ class PlamoEmbeddingProvider:
     def embed_query(self, text: str) -> list[float]:
         import torch
 
-        with torch.inference_mode():
-            vector = self._model.encode_query([text], self._tokenizer)
-        return tensor_to_vectors(vector)[0]
+        def encode() -> object:
+            with torch.inference_mode():
+                return self._model.encode_query([text], self._tokenizer)
+
+        return self._encode_with_retry(encode)[0]
 
     def _encode_documents(self, texts: list[str]) -> list[list[float]]:
         import torch
 
-        with torch.inference_mode():
-            vectors = self._model.encode_document(texts, self._tokenizer)
-        return tensor_to_vectors(vectors)
+        def encode() -> object:
+            with torch.inference_mode():
+                return self._model.encode_document(texts, self._tokenizer)
+
+        return self._encode_with_retry(encode)
+
+    def _encode_with_retry(self, encode: Callable[[], object]) -> list[list[float]]:
+        last_error: ValueError | None = None
+        for _ in range(PLAMO_RETRY_ATTEMPTS):
+            try:
+                return tensor_to_vectors(encode())
+            except ValueError as error:
+                if "non-finite" not in str(error):
+                    raise
+                last_error = error
+        assert last_error is not None
+        raise last_error
 
 
 def create_embedding_provider(
