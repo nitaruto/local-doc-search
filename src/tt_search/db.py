@@ -4,6 +4,7 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlite_vec
@@ -72,6 +73,8 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
     set_metadata(con, "schema_version", SCHEMA_VERSION)
     set_metadata(con, "embedding_model", embedding_model)
     set_metadata(con, "embedding_dim", str(embedding_dim))
+    if get_metadata(con, "created_at") is None:
+        set_metadata(con, "created_at", datetime.now(UTC).isoformat())
 
 
 def set_metadata(con: sqlite3.Connection, key: str, value: str) -> None:
