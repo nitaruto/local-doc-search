@@ -3,9 +3,10 @@ from __future__ import annotations
 import math
 import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
-from .db import serialize_vector
+from .db import connect, serialize_vector
 from .embeddings import EmbeddingProvider
 
 SearchMode = Literal["fts", "vec", "fts-vec", "vec-fts"]
@@ -13,6 +14,7 @@ SearchMode = Literal["fts", "vec", "fts-vec", "vec-fts"]
 
 @dataclass(frozen=True)
 class SearchResult:
+    db_path: str | None
     chunk_id: int
     path: str
     relative_path: str
@@ -34,23 +36,90 @@ def search(
     limit: int,
     candidates: int,
     embedder: EmbeddingProvider | None,
+    db_path: str | None = None,
+    query_vector: bytes | None = None,
 ) -> list[SearchResult]:
     if mode in {"vec", "fts-vec", "vec-fts"} and embedder is None:
         raise ValueError("Embedding provider is required for vector search")
     if mode == "fts":
-        return fts_candidates(con, query, candidates=limit)
+        return with_db_path(fts_candidates(con, query, candidates=limit), db_path)
     if mode == "vec":
         assert embedder is not None
-        return vec_candidates(con, query, candidates=limit, embedder=embedder)
+        return with_db_path(
+            vec_candidates(
+                con,
+                query,
+                candidates=limit,
+                embedder=embedder,
+                query_vector=query_vector,
+            ),
+            db_path,
+        )
     if mode == "fts-vec":
         assert embedder is not None
         rows = fts_candidates(con, query, candidates=candidates)
-        return rerank_by_vector(con, query, rows, limit=limit, embedder=embedder)
+        return with_db_path(
+            rerank_by_vector(
+                con,
+                query,
+                rows,
+                limit=limit,
+                embedder=embedder,
+                query_vector=query_vector,
+            ),
+            db_path,
+        )
     if mode == "vec-fts":
         assert embedder is not None
-        rows = vec_candidates(con, query, candidates=candidates, embedder=embedder)
-        return rerank_by_fts(con, query, rows, limit=limit)
+        rows = vec_candidates(
+            con,
+            query,
+            candidates=candidates,
+            embedder=embedder,
+            query_vector=query_vector,
+        )
+        return with_db_path(rerank_by_fts(con, query, rows, limit=limit), db_path)
     raise ValueError(f"Unknown mode: {mode}")
+
+
+def search_many(
+    db_paths: list[Path],
+    *,
+    query: str,
+    mode: SearchMode,
+    limit: int,
+    candidates: int,
+    embedder: EmbeddingProvider | None,
+) -> list[SearchResult]:
+    query_vector = None
+    if mode in {"vec", "fts-vec", "vec-fts"}:
+        if embedder is None:
+            raise ValueError("Embedding provider is required for vector search")
+        query_vector = serialize_vector(embedder.embed_query(query))
+
+    all_results: list[SearchResult] = []
+    per_db_candidates = max(candidates, limit)
+    for db_path in db_paths:
+        with connect(db_path) as con:
+            all_results.extend(
+                search(
+                    con,
+                    query=query,
+                    mode=mode,
+                    limit=per_db_candidates,
+                    candidates=per_db_candidates,
+                    embedder=embedder,
+                    db_path=str(db_path),
+                    query_vector=query_vector,
+                )
+            )
+    return sorted(all_results, key=lambda result: result.score, reverse=True)[:limit]
+
+
+def with_db_path(results: list[SearchResult], db_path: str | None) -> list[SearchResult]:
+    if db_path is None:
+        return results
+    return [SearchResult(**{**result.__dict__, "db_path": db_path}) for result in results]
 
 
 def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> list[SearchResult]:
@@ -78,6 +147,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
     ).fetchall()
     return [
         SearchResult(
+            db_path=None,
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
             relative_path=str(row["relative_path"]),
@@ -115,6 +185,7 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
     ).fetchall()
     return [
         SearchResult(
+            db_path=None,
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
             relative_path=str(row["relative_path"]),
@@ -136,8 +207,9 @@ def vec_candidates(
     *,
     candidates: int,
     embedder: EmbeddingProvider,
+    query_vector: bytes | None = None,
 ) -> list[SearchResult]:
-    query_vector = serialize_vector(embedder.embed_query(query))
+    query_vector = query_vector or serialize_vector(embedder.embed_query(query))
     rows = con.execute(
         """
         SELECT
@@ -159,6 +231,7 @@ def vec_candidates(
     ).fetchall()
     return [
         SearchResult(
+            db_path=None,
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
             relative_path=str(row["relative_path"]),
@@ -181,10 +254,11 @@ def rerank_by_vector(
     *,
     limit: int,
     embedder: EmbeddingProvider,
+    query_vector: bytes | None = None,
 ) -> list[SearchResult]:
     if not rows:
         return []
-    query_vector = serialize_vector(embedder.embed_query(query))
+    query_vector = query_vector or serialize_vector(embedder.embed_query(query))
     chunk_ids = [row.chunk_id for row in rows]
     placeholders = ",".join("?" for _ in chunk_ids)
     distances = {

@@ -4,12 +4,27 @@ import json
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 import sqlite_vec
 
 SCHEMA_VERSION = "1"
+EMBEDDING_COMPAT_KEYS = (
+    "embedding_model",
+    "embedding_dim",
+    "embedding_backend",
+    "embedding_prefix_policy",
+)
+
+
+@dataclass(frozen=True)
+class DbFingerprint:
+    path: str
+    size: int
+    mtime_ns: int
+    metadata: dict[str, str]
 
 
 @contextmanager
@@ -140,3 +155,57 @@ def format_info(con: sqlite3.Connection) -> dict[str, object]:
 
 def as_json(data: object) -> str:
     return json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def fingerprint_db(db_path: Path) -> DbFingerprint:
+    resolved = db_path.expanduser().resolve()
+    stat = resolved.stat()
+    with connect(resolved) as con:
+        metadata = decode_metadata(con)
+    return DbFingerprint(
+        path=str(resolved),
+        size=stat.st_size,
+        mtime_ns=stat.st_mtime_ns,
+        metadata=metadata,
+    )
+
+
+def fingerprint_many(db_paths: list[Path]) -> list[DbFingerprint]:
+    return [fingerprint_db(db_path) for db_path in normalize_db_paths(db_paths)]
+
+
+def normalize_db_paths(db_paths: list[Path]) -> list[Path]:
+    return sorted({db_path.expanduser().resolve() for db_path in db_paths})
+
+
+def validate_embedding_compatible(fingerprints: list[DbFingerprint]) -> dict[str, str]:
+    if not fingerprints:
+        raise ValueError("At least one DB is required")
+    base = {
+        key: fingerprints[0].metadata.get(key, "")
+        for key in EMBEDDING_COMPAT_KEYS
+    }
+    missing = [key for key, value in base.items() if not value]
+    if missing:
+        raise ValueError(f"DB is missing embedding metadata: {', '.join(missing)}")
+    for fingerprint in fingerprints[1:]:
+        values = {key: fingerprint.metadata.get(key, "") for key in EMBEDDING_COMPAT_KEYS}
+        if values != base:
+            raise ValueError(
+                "DB embedding metadata mismatch: "
+                f"{fingerprint.path} is not compatible with {fingerprints[0].path}"
+            )
+    return base
+
+
+def fingerprints_match(current: list[DbFingerprint], expected: list[dict[str, object]]) -> bool:
+    if len(current) != len(expected):
+        return False
+    for current_item, expected_item in zip(current, expected, strict=True):
+        if current_item.path != expected_item.get("path"):
+            return False
+        if current_item.size != expected_item.get("size"):
+            return False
+        if current_item.mtime_ns != expected_item.get("mtime_ns"):
+            return False
+    return True

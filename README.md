@@ -29,3 +29,16 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 ```
 
 `--device auto` uses MPS when PyTorch MPS is available and falls back to CPU otherwise.
+
+Multiple compatible DBs can be searched together.
+
+```bash
+uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索したい内容" --mode fts-vec
+```
+
+Run a local server to avoid loading the embedding model for every query.
+
+```bash
+uv run tt-search server --db notes.sqlite --device auto
+uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec
+```

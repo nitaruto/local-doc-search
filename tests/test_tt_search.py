@@ -5,7 +5,13 @@ from pathlib import Path
 import pytest
 
 from tt_search import cli
-from tt_search.db import connect, ensure_schema, format_info
+from tt_search.db import (
+    connect,
+    ensure_schema,
+    fingerprint_many,
+    format_info,
+    validate_embedding_compatible,
+)
 from tt_search.embeddings import (
     normalize_vector,
     prefix_passage,
@@ -14,7 +20,7 @@ from tt_search.embeddings import (
     resolve_device,
 )
 from tt_search.indexer import index_paths
-from tt_search.search import search
+from tt_search.search import search, search_many
 
 
 class FakeEmbedder:
@@ -230,13 +236,59 @@ def test_cli_search_uses_model_from_db_metadata(
 
     monkeypatch.setattr(cli, "SentenceTransformerEmbeddingProvider", RecordingEmbedder)
     cli.search_cmd(
-        db=db,
+        db=[db],
         query="検索 sqlite",
         mode="vec",
         limit=1,
         candidates=3,
+        no_server=True,
         explain=False,
         json_output=True,
     )
 
     assert created_models == ["fake"]
+
+
+def test_search_many_merges_multiple_dbs(tmp_path: Path) -> None:
+    root1 = tmp_path / "root1"
+    root2 = tmp_path / "root2"
+    root1.mkdir()
+    root2.mkdir()
+    (root1 / "search.md").write_text("検索とsqliteのメモです。\n", encoding="utf-8")
+    (root2 / "travel.md").write_text("京都旅行のメモです。\n", encoding="utf-8")
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    build_db(db1, [root1])
+    build_db(db2, [root2])
+
+    results = search_many(
+        [db1, db2],
+        query="メモ",
+        mode="fts",
+        limit=10,
+        candidates=10,
+        embedder=None,
+    )
+
+    assert {Path(result.db_path or "").name for result in results} == {"one.sqlite", "two.sqlite"}
+    assert {Path(result.path).name for result in results} == {"search.md", "travel.md"}
+
+
+def test_embedding_compatibility_rejects_mismatched_model(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    build_db(db1, [sample_roots[0]])
+    build_db(db2, [sample_roots[1]])
+    with connect(db2) as con:
+        con.execute(
+            """
+            INSERT INTO metadata(key, value) VALUES ('embedding_model', 'other')
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """
+        )
+
+    fingerprints = fingerprint_many([db1, db2])
+    with pytest.raises(ValueError, match="metadata mismatch"):
+        validate_embedding_compatible(fingerprints)
