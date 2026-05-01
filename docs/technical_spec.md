@@ -129,6 +129,12 @@ search時:
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
 - `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためtt-search側では付与しない。
 
+推奨:
+
+- 安定運用では `intfloat/multilingual-e5-small` を基本とする。
+- 日本語精度を重視する場合は `cl-nagoya/ruri-v3-*` を優先候補とする。
+- `pfnet/plamo-embedding-1b` は現状、CPU/MPSともに非有限値を返す確率が高く、retry前提になるため実験用扱いとする。通常利用では推奨しない。
+
 現在のbackend:
 
 - `sentence-transformers`
