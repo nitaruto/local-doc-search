@@ -106,7 +106,7 @@ class PlamoEmbeddingProvider:
         import torch
 
         with torch.inference_mode():
-            vector = self._model.encode_query(text, self._tokenizer)
+            vector = self._model.encode_query([text], self._tokenizer)
         return tensor_to_vectors(vector)[0]
 
     def _encode_documents(self, texts: list[str]) -> list[list[float]]:
@@ -138,6 +138,8 @@ def tensor_to_vectors(value: object) -> list[list[float]]:
     arr = np.asarray(value, dtype=np.float32)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
+    if not np.isfinite(arr).all():
+        raise ValueError("Embedding model returned non-finite values")
     return [normalize_vector(row.tolist()) for row in arr]
 
 

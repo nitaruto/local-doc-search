@@ -571,7 +571,7 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert ("document", ["dimension probe"]) in calls
     assert ("document", ["a"]) in calls
     assert ("document", ["b"]) in calls
-    assert ("query", "q") in calls
+    assert ("query", ["q"]) in calls
 
 
 def test_ensure_plamo_max_length_preserves_existing_value() -> None:
@@ -593,6 +593,13 @@ def test_tensor_to_vectors_accepts_bfloat16_tensor() -> None:
     vectors = tensor_to_vectors(torch.tensor([[3.0, 4.0, 0.0]], dtype=torch.bfloat16))
 
     assert vectors[0] == pytest.approx([0.6, 0.8, 0.0])
+
+
+def test_tensor_to_vectors_rejects_non_finite_values() -> None:
+    import numpy as np
+
+    with pytest.raises(ValueError, match="non-finite"):
+        tensor_to_vectors(np.array([[float("nan"), 1.0]], dtype=np.float32))
 
 
 def test_cli_search_uses_model_from_db_metadata(
