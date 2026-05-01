@@ -100,11 +100,12 @@ def chunk_paragraphs(
     chunks: list[Chunk] = []
     current_parts: list[tuple[int, int, str]] = []
 
-    def flush_current() -> None:
+    def flush_current(*, keep_last_paragraph: bool = False) -> None:
         if not current_parts:
             return
         start = current_parts[0][0]
         end = current_parts[-1][1]
+        overlap_part = current_parts[-1] if keep_last_paragraph else None
         chunk_body = "\n\n".join(part for _, _, part in current_parts)
         chunks.append(
             Chunk(
@@ -117,6 +118,15 @@ def chunk_paragraphs(
             )
         )
         current_parts.clear()
+        if overlap_part is not None:
+            current_parts.append(overlap_part)
+
+    def trim_overlap_for(paragraph: str) -> None:
+        while current_parts:
+            candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
+            if len(candidate) <= max_chars:
+                return
+            current_parts.pop(0)
 
     for start, end, paragraph in paragraphs:
         if len(paragraph) > max_chars:
@@ -126,7 +136,8 @@ def chunk_paragraphs(
 
         candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
         if current_parts and len(candidate) > max_chars:
-            flush_current()
+            flush_current(keep_last_paragraph=True)
+            trim_overlap_for(paragraph)
         current_parts.append((start, end, paragraph))
 
     flush_current()

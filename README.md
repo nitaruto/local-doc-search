@@ -12,6 +12,7 @@ Indexing shows progress for discovered files, skipped/unchanged files, embedding
 processed chunks per second.
 Short paragraphs are packed into chunks up to 600 characters by default; very long
 paragraphs are split with 120-character overlap.
+Packed paragraph chunks overlap by one paragraph when possible.
 Chunking is selected through extension-based strategies so format-specific splitting can be
 added without changing the indexing pipeline.
 Markdown chunks do not cross ATX heading section boundaries.

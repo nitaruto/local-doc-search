@@ -354,9 +354,17 @@ def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:
 
     chunks = chunk_text(text, max_chars=10)
 
-    assert [chunk.text for chunk in chunks] == ["aaa\n\nbbb", "cccc"]
-    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (5, 5)]
+    assert [chunk.text for chunk in chunks] == ["aaa\n\nbbb", "bbb\n\ncccc"]
+    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (3, 5)]
     assert [chunk.index for chunk in chunks] == [0, 1]
+
+
+def test_chunk_text_drops_overlap_when_it_would_exceed_max_chars() -> None:
+    text = "aaaa\n\nbbbb\n\ncccc\n"
+
+    chunks = chunk_text(text, max_chars=8)
+
+    assert [chunk.text for chunk in chunks] == ["aaaa", "bbbb", "cccc"]
 
 
 def test_chunk_text_splits_long_paragraph_with_overlap() -> None:
@@ -393,6 +401,19 @@ def test_markdown_chunks_do_not_cross_section_boundaries() -> None:
 
     assert [chunk.text for chunk in chunks] == ["# A\n\npara a", "# B\n\npara b"]
     assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (5, 7)]
+
+
+def test_markdown_paragraph_overlap_stays_inside_section() -> None:
+    text = "# A\n\naaa\n\nbbb\n\ncccc\n\n# B\n\nddd\n"
+
+    chunks = chunk_file(Path("notes.md"), text, max_chars=10)
+
+    assert [chunk.text for chunk in chunks] == [
+        "# A\n\naaa",
+        "aaa\n\nbbb",
+        "bbb\n\ncccc",
+        "# B\n\nddd",
+    ]
 
 
 def test_markdown_heading_inside_fenced_code_is_not_section_boundary() -> None:
