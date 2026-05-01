@@ -90,6 +90,7 @@ class PlamoEmbeddingProvider:
         self.prefix_policy = "plamo"
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
         self._model = AutoModel.from_pretrained(self.model_name, trust_remote_code=True)
+        ensure_plamo_max_length(self._model)
         self._model = self._model.to(self.device)
         self._model.eval()
         sample = self._encode_documents(["dimension probe"])
@@ -133,11 +134,19 @@ def create_embedding_provider(
 
 def tensor_to_vectors(value: object) -> list[list[float]]:
     if hasattr(value, "detach"):
-        value = value.detach().cpu()
+        value = value.detach().float().cpu()
     arr = np.asarray(value, dtype=np.float32)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
     return [normalize_vector(row.tolist()) for row in arr]
+
+
+def ensure_plamo_max_length(model: object) -> None:
+    config = getattr(model, "config", None)
+    if config is None or hasattr(config, "max_length"):
+        return
+    max_length = getattr(config, "max_position_embeddings", 4096)
+    config.max_length = int(max_length)
 
 
 def resolve_device(device: DeviceOption) -> str:

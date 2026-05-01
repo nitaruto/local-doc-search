@@ -20,11 +20,13 @@ from tt_search.embeddings import (
     PLAMO_MODEL,
     PlamoEmbeddingProvider,
     create_embedding_provider,
+    ensure_plamo_max_length,
     normalize_vector,
     prefix_passage,
     prefix_policy_for_model,
     prefix_query,
     resolve_device,
+    tensor_to_vectors,
 )
 from tt_search.indexer import (
     MarkdownSectionStrategy,
@@ -522,7 +524,13 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     class FakeTokenizer:
         pass
 
+    class FakeConfig:
+        max_position_embeddings = 1234
+
     class FakePlamoModel:
+        def __init__(self) -> None:
+            self.config = FakeConfig()
+
         def to(self, device: str) -> FakePlamoModel:
             calls.append(("to", device))
             return self
@@ -555,6 +563,7 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert provider.backend == PLAMO_BACKEND
     assert provider.prefix_policy == "plamo"
     assert provider.dim == 3
+    assert provider._model.config.max_length == 1234
     passage_vectors = provider.embed_passages(["a", "b"])
     assert passage_vectors[0] == pytest.approx([0.6, 0.8, 0.0])
     assert passage_vectors[1] == pytest.approx([0.6, 0.8, 0.0])
@@ -563,6 +572,27 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert ("document", ["a"]) in calls
     assert ("document", ["b"]) in calls
     assert ("query", "q") in calls
+
+
+def test_ensure_plamo_max_length_preserves_existing_value() -> None:
+    class FakeConfig:
+        max_length = 2048
+        max_position_embeddings = 4096
+
+    class FakeModel:
+        config = FakeConfig()
+
+    ensure_plamo_max_length(FakeModel())
+
+    assert FakeModel.config.max_length == 2048
+
+
+def test_tensor_to_vectors_accepts_bfloat16_tensor() -> None:
+    import torch
+
+    vectors = tensor_to_vectors(torch.tensor([[3.0, 4.0, 0.0]], dtype=torch.bfloat16))
+
+    assert vectors[0] == pytest.approx([0.6, 0.8, 0.0])
 
 
 def test_cli_search_uses_model_from_db_metadata(
