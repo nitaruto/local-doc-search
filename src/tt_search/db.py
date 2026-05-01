@@ -18,7 +18,9 @@ def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     con.execute("PRAGMA journal_mode = WAL")
+    con.enable_load_extension(True)
     sqlite_vec.load(con)
+    con.enable_load_extension(False)
     try:
         yield con
         con.commit()
