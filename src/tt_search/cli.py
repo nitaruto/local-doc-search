@@ -7,7 +7,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from .db import as_json, connect, format_info
+from .db import as_json, connect, format_info, get_metadata
 from .embeddings import DEFAULT_MODEL, SentenceTransformerEmbeddingProvider
 from .indexer import index_paths
 from .search import SearchMode, search
@@ -61,19 +61,21 @@ def search_cmd(
     candidates: Annotated[
         int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
     ] = 50,
-    model: Annotated[str, typer.Option("--model", help="sentence-transformers model name.")] = (
-        DEFAULT_MODEL
-    ),
     explain: Annotated[bool, typer.Option("--explain", help="Show component scores.")] = False,
     json_output: Annotated[
         bool, typer.Option("--json", help="Print JSON instead of a table.")
     ] = False,
 ) -> None:
     """Search indexed files."""
-    embedder = None
-    if mode in {"vec", "fts-vec", "vec-fts"}:
-        embedder = SentenceTransformerEmbeddingProvider(model_name=model)
     with connect(db) as con:
+        embedder = None
+        if mode in {"vec", "fts-vec", "vec-fts"}:
+            model = get_metadata(con, "embedding_model")
+            if model is None:
+                raise typer.BadParameter(
+                    "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
+                )
+            embedder = SentenceTransformerEmbeddingProvider(model_name=model)
         rows = search(
             con,
             query=query,

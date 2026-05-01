@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from tt_search import cli
 from tt_search.db import connect, ensure_schema, format_info
 from tt_search.embeddings import normalize_vector
 from tt_search.indexer import index_paths
@@ -160,3 +161,29 @@ def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:
         ensure_schema(con, embedding_dim=3, embedding_model="fake")
         with pytest.raises(ValueError):
             ensure_schema(con, embedding_dim=4, embedding_model="other")
+
+
+def test_cli_search_uses_model_from_db_metadata(
+    tmp_path: Path, sample_roots: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+
+    created_models: list[str] = []
+
+    class RecordingEmbedder(FakeEmbedder):
+        def __init__(self, model_name: str) -> None:
+            created_models.append(model_name)
+
+    monkeypatch.setattr(cli, "SentenceTransformerEmbeddingProvider", RecordingEmbedder)
+    cli.search_cmd(
+        db=db,
+        query="検索 sqlite",
+        mode="vec",
+        limit=1,
+        candidates=3,
+        explain=False,
+        json_output=True,
+    )
+
+    assert created_models == ["fake"]
