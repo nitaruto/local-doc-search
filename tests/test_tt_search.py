@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,70 @@ def test_index_multiple_roots_and_extension_filter(
     assert info["chunk_count"] == 2
     assert info["metadata"]["embedding_model"] == "fake"
     assert [row["relative_path"] for row in rows] == ["search.md", "travel.md"]
+
+
+def test_index_excludes_relative_path_regex(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+    archive = root / "archive"
+    root.mkdir()
+    archive.mkdir()
+    (root / "keep.md").write_text("検索対象です。\n", encoding="utf-8")
+    (archive / "old.md").write_text("除外対象です。\n", encoding="utf-8")
+    (root / "memo.tmp.md").write_text("一時ファイルです。\n", encoding="utf-8")
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as con:
+        stats = index_paths(
+            con,
+            roots=[root],
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            exclude_patterns=[r"^archive/", r"\.tmp\.md$"],
+        )
+        rows = con.execute("SELECT relative_path FROM files ORDER BY relative_path").fetchall()
+
+    assert stats.scanned_files == 1
+    assert stats.excluded_files == 2
+    assert [row["relative_path"] for row in rows] == ["keep.md"]
+
+
+def test_index_exclude_applies_per_root_relative_path(tmp_path: Path) -> None:
+    root1 = tmp_path / "root1"
+    root2 = tmp_path / "root2"
+    (root1 / "archive").mkdir(parents=True)
+    (root2 / "archive").mkdir(parents=True)
+    (root1 / "archive" / "old.md").write_text("除外1\n", encoding="utf-8")
+    (root2 / "archive" / "old.md").write_text("除外2\n", encoding="utf-8")
+    (root1 / "keep.md").write_text("保持1\n", encoding="utf-8")
+    (root2 / "keep.md").write_text("保持2\n", encoding="utf-8")
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as con:
+        stats = index_paths(
+            con,
+            roots=[root1, root2],
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            exclude_patterns=[r"^archive/"],
+        )
+
+    assert stats.scanned_files == 2
+    assert stats.excluded_files == 2
+
+
+def test_index_exclude_invalid_regex_raises(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+    root.mkdir()
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as con, pytest.raises(re.error):
+        index_paths(
+            con,
+            roots=[root],
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            exclude_patterns=["["],
+        )
 
 
 def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

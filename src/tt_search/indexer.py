@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +47,7 @@ class Chunk:
 @dataclass(frozen=True)
 class IndexStats:
     scanned_files: int = 0
+    excluded_files: int = 0
     indexed_files: int = 0
     skipped_files: int = 0
     chunks: int = 0
@@ -68,13 +70,31 @@ def normalize_extensions(exts: list[str] | None) -> set[str]:
     return {ext if ext.startswith(".") else f".{ext}" for ext in values}
 
 
-def iter_candidate_files(roots: list[Path], extensions: set[str]) -> list[CandidateFile]:
+def compile_exclude_patterns(patterns: list[str] | None) -> list[re.Pattern[str]]:
+    return [re.compile(pattern) for pattern in patterns or []]
+
+
+def is_excluded(relative_path: Path, patterns: list[re.Pattern[str]]) -> bool:
+    value = relative_path.as_posix()
+    return any(pattern.search(value) for pattern in patterns)
+
+
+def iter_candidate_files(
+    roots: list[Path],
+    extensions: set[str],
+    exclude_patterns: list[re.Pattern[str]] | None = None,
+) -> tuple[list[CandidateFile], int]:
     paths: dict[Path, CandidateFile] = {}
+    excluded = 0
+    exclude_patterns = exclude_patterns or []
     for root in roots:
         root = root.expanduser().resolve()
         if root.is_file():
-            if root.suffix in extensions:
-                paths[root] = CandidateFile(root, root.parent, Path(root.name))
+            relative_path = Path(root.name)
+            if root.suffix in extensions and not is_excluded(relative_path, exclude_patterns):
+                paths[root] = CandidateFile(root, root.parent, relative_path)
+            elif root.suffix in extensions:
+                excluded += 1
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [
@@ -86,10 +106,12 @@ def iter_candidate_files(roots: list[Path], extensions: set[str]) -> list[Candid
                 path = Path(dirpath) / filename
                 if path.suffix in extensions:
                     resolved = path.resolve()
-                    paths.setdefault(
-                        resolved, CandidateFile(resolved, root, resolved.relative_to(root))
-                    )
-    return [paths[path] for path in sorted(paths)]
+                    relative_path = resolved.relative_to(root)
+                    if is_excluded(relative_path, exclude_patterns):
+                        excluded += 1
+                        continue
+                    paths.setdefault(resolved, CandidateFile(resolved, root, relative_path))
+    return [paths[path] for path in sorted(paths)], excluded
 
 
 def read_text_file(candidate: CandidateFile) -> IndexedFile | None:
@@ -189,6 +211,7 @@ def index_paths(
     embedder: EmbeddingProvider,
     rebuild: bool = False,
     progress: IndexProgress | None = None,
+    exclude_patterns: list[str] | None = None,
 ) -> IndexStats:
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
     set_embedding_metadata(
@@ -202,7 +225,8 @@ def index_paths(
         clear_index(con)
 
     allowed = normalize_extensions(extensions)
-    paths = iter_candidate_files(roots, allowed)
+    compiled_exclude_patterns = compile_exclude_patterns(exclude_patterns)
+    paths, excluded_files = iter_candidate_files(roots, allowed, compiled_exclude_patterns)
     if progress is not None:
         progress.on_scan_complete(len(paths))
     seen = {str(candidate.path) for candidate in paths}
@@ -234,6 +258,7 @@ def index_paths(
 
     return IndexStats(
         scanned_files=stats.scanned_files,
+        excluded_files=excluded_files,
         indexed_files=indexed_files,
         skipped_files=skipped_files,
         chunks=chunk_count,

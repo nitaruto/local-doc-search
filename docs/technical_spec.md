@@ -47,7 +47,7 @@ SQLite DBには以下を保存する。
 
 ## Indexing
 
-`tt-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...]` でindexする。
+`tt-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...] [--exclude REGEX ...]` でindexする。
 
 処理内容:
 
@@ -55,6 +55,8 @@ SQLite DBには以下を保存する。
 - rootがファイルの場合は、そのファイルの親ディレクトリをroot扱いにする。
 - 拡張子指定がある場合は、その拡張子だけ対象にする。
 - デフォルト対象拡張子は `.txt`, `.md`, `.markdown`, `.rst`。
+- `--exclude` はrootからの相対pathをPOSIX形式にした文字列に対してPython regex `re.search()` で判定する。
+- `--exclude` は複数指定でき、1つでもmatchしたファイルはindex対象外にする。
 - `.git`, `.venv`, `__pycache__`, dot directory は走査対象から除外する。
 - UTF-8 / UTF-8 BOMとして読めないファイルはskipする。
 - ファイル本文は段落単位でchunk化する。
@@ -62,6 +64,12 @@ SQLite DBには以下を保存する。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
 - index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数をprogress表示する。
+
+exclude例:
+
+```bash
+uv run tt-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --exclude '\.tmp\.md$'
+```
 
 ## 差分更新
 
@@ -74,6 +82,7 @@ DBに保存済みの `root_path`, `relative_path`, `size`, `mtime_ns`, `content_
 - 新規ファイル: chunk/FTS/vectorを新規作成する。
 - 更新ファイル: そのファイルの既存chunk/FTS/vectorを削除し、ファイル単位で再作成する。
 - 削除ファイル: DBから該当file/chunk/FTS/vectorを削除する。
+- `--exclude` により今回のindex対象外になった既存ファイル: 削除ファイルと同じくDBから削除する。
 - 変更なし: 再チャンク化、再embedding、FTS/vector更新をskipする。
 
 現在の実装上の注意:

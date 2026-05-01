@@ -42,6 +42,13 @@ def index(
         list[str] | None,
         typer.Option("--ext", help="File extension to include. Can be specified multiple times."),
     ] = None,
+    exclude: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--exclude",
+            help="Regex pattern matched against root-relative POSIX paths. Can be repeated.",
+        ),
+    ] = None,
     model: Annotated[str, typer.Option("--model", help="sentence-transformers model name.")] = (
         DEFAULT_MODEL
     ),
@@ -79,11 +86,13 @@ def index(
                 embedder=embedder,
                 rebuild=rebuild,
                 progress=reporter,
+                exclude_patterns=exclude,
             )
     console.print(
         as_json(
             {
                 "scanned_files": stats.scanned_files,
+                "excluded_files": stats.excluded_files,
                 "indexed_files": stats.indexed_files,
                 "skipped_files": stats.skipped_files,
                 "chunks": stats.chunks,
