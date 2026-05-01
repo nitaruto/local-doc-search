@@ -138,38 +138,72 @@ def read_text_file(candidate: CandidateFile) -> IndexedFile | None:
 def chunk_text(text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
     paragraphs = split_paragraphs(text)
     chunks: list[Chunk] = []
+    current_parts: list[tuple[int, int, str]] = []
+
+    def flush_current() -> None:
+        if not current_parts:
+            return
+        start = current_parts[0][0]
+        end = current_parts[-1][1]
+        chunk_body = "\n\n".join(part for _, _, part in current_parts)
+        chunks.append(
+            Chunk(
+                len(chunks),
+                start,
+                end,
+                line_number_at_offset(text, start),
+                line_number_at_offset(text, max(start, end - 1)),
+                chunk_body,
+            )
+        )
+        current_parts.clear()
+
     for start, end, paragraph in paragraphs:
-        if len(paragraph) <= max_chars:
-            chunks.append(
-                Chunk(
-                    len(chunks),
-                    start,
-                    end,
-                    line_number_at_offset(text, start),
-                    line_number_at_offset(text, max(start, end - 1)),
-                    paragraph,
-                )
-            )
+        if len(paragraph) > max_chars:
+            flush_current()
+            chunks.extend(split_long_paragraph(text, paragraph, start, max_chars))
             continue
-        cursor = 0
-        while cursor < len(paragraph):
-            part = paragraph[cursor : cursor + max_chars]
-            part_start = start + cursor
-            part_end = part_start + len(part)
-            chunks.append(
-                Chunk(
-                    len(chunks),
-                    part_start,
-                    part_end,
-                    line_number_at_offset(text, part_start),
-                    line_number_at_offset(text, max(part_start, part_end - 1)),
-                    part,
-                )
+
+        candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
+        if current_parts and len(candidate) > max_chars:
+            flush_current()
+        current_parts.append((start, end, paragraph))
+
+    flush_current()
+    return [
+        Chunk(
+            index,
+            chunk.start_offset,
+            chunk.end_offset,
+            chunk.start_line,
+            chunk.end_line,
+            chunk.text,
+        )
+        for index, chunk in enumerate(chunk for chunk in chunks if chunk.text.strip())
+    ]
+
+
+def split_long_paragraph(text: str, paragraph: str, start: int, max_chars: int) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    cursor = 0
+    while cursor < len(paragraph):
+        part = paragraph[cursor : cursor + max_chars]
+        part_start = start + cursor
+        part_end = part_start + len(part)
+        chunks.append(
+            Chunk(
+                len(chunks),
+                part_start,
+                part_end,
+                line_number_at_offset(text, part_start),
+                line_number_at_offset(text, max(part_start, part_end - 1)),
+                part,
             )
-            if cursor + max_chars >= len(paragraph):
-                break
-            cursor += max_chars - OVERLAP_CHARS
-    return [chunk for chunk in chunks if chunk.text.strip()]
+        )
+        if cursor + max_chars >= len(paragraph):
+            break
+        cursor += max(1, max_chars - OVERLAP_CHARS)
+    return chunks
 
 
 def line_number_at_offset(text: str, offset: int) -> int:

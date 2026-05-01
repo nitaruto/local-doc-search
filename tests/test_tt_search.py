@@ -22,7 +22,7 @@ from tt_search.embeddings import (
     prefix_query,
     resolve_device,
 )
-from tt_search.indexer import index_paths
+from tt_search.indexer import chunk_text, index_paths
 from tt_search.search import search, search_many
 
 runner = CliRunner()
@@ -325,7 +325,32 @@ def test_chunk_line_numbers_are_indexed(tmp_path: Path) -> None:
             """
         ).fetchall()
 
-    assert [(row["start_line"], row["end_line"]) for row in rows] == [(1, 1), (3, 4), (6, 6)]
+    assert [(row["start_line"], row["end_line"]) for row in rows] == [(1, 6)]
+    assert rows[0]["text"] == "title\n\nfirst paragraph\nsecond line\n\nlast paragraph"
+
+
+def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:
+    text = "aaa\n\nbbb\n\ncccc\n"
+
+    chunks = chunk_text(text, max_chars=10)
+
+    assert [chunk.text for chunk in chunks] == ["aaa\n\nbbb", "cccc"]
+    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (5, 5)]
+    assert [chunk.index for chunk in chunks] == [0, 1]
+
+
+def test_chunk_text_splits_long_paragraph_with_overlap() -> None:
+    text = "a" * 300
+
+    chunks = chunk_text(text, max_chars=200)
+
+    assert [len(chunk.text) for chunk in chunks] == [200, 200, 140]
+    assert [(chunk.start_offset, chunk.end_offset) for chunk in chunks] == [
+        (0, 200),
+        (80, 280),
+        (160, 300),
+    ]
+    assert [chunk.index for chunk in chunks] == [0, 1, 2]
 
 
 def test_index_progress_reports_scan_and_file_events(

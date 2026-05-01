@@ -9,6 +9,8 @@ It builds a SQLite database from files under one or more directories and combine
 - local sentence-transformers embeddings
 
 Indexing shows progress for discovered files, skipped/unchanged files, and embedding work.
+Short paragraphs are packed into chunks up to the configured character limit; very long
+paragraphs are split with overlap.
 
 ## Usage
 

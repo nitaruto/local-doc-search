@@ -60,8 +60,8 @@ SQLite DBには以下を保存する。
 - `--exclude` は複数指定でき、1つでもmatchしたファイルはindex対象外にする。
 - `.git`, `.venv`, `__pycache__`, dot directory は走査対象から除外する。
 - UTF-8 / UTF-8 BOMとして読めないファイルはskipする。
-- ファイル本文は段落単位でchunk化する。
-- 長すぎる段落は文字数上限で分割し、少しoverlapさせる。
+- ファイル本文は空行区切りの段落を抽出し、文字数上限以内で複数段落を1chunkへまとめる。
+- 単独で長すぎる段落は文字数上限で分割し、少しoverlapさせる。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
 - index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数をprogress表示する。
