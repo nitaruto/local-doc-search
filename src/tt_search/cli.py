@@ -14,6 +14,7 @@ from .db import (
     connect,
     fingerprint_many,
     format_info,
+    list_indexed_files,
     normalize_db_paths,
     validate_embedding_compatible,
 )
@@ -247,6 +248,30 @@ def info(
         table.add_row(str(key), str(value))
     table.add_row("file_count", str(data["file_count"]))
     table.add_row("chunk_count", str(data["chunk_count"]))
+    console.print(table)
+
+
+@app.command(name="files")
+def files_cmd(
+    db: Annotated[Path, typer.Option("--db", help="SQLite DB path.")],
+    json_output: Annotated[bool, typer.Option("--json", help="Print JSON.")] = False,
+) -> None:
+    """List files indexed in a database."""
+    with connect(db) as con:
+        rows = list_indexed_files(con)
+    if json_output:
+        console.print(as_json([row.__dict__ for row in rows]))
+        return
+    table = Table("relative_path", "path", "root_path", "size", "mtime_ns", "content_hash")
+    for row in rows:
+        table.add_row(
+            row.relative_path,
+            row.path,
+            row.root_path,
+            str(row.size),
+            str(row.mtime_ns),
+            row.content_hash,
+        )
     console.print(table)
 
 

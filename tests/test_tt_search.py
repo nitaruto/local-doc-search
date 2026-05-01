@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from tt_search import cli
 from tt_search.db import (
@@ -11,6 +12,7 @@ from tt_search.db import (
     ensure_schema,
     fingerprint_many,
     format_info,
+    list_indexed_files,
     validate_embedding_compatible,
 )
 from tt_search.embeddings import (
@@ -22,6 +24,8 @@ from tt_search.embeddings import (
 )
 from tt_search.indexer import index_paths
 from tt_search.search import search, search_many
+
+runner = CliRunner()
 
 
 class FakeEmbedder:
@@ -128,6 +132,33 @@ def test_index_excludes_relative_path_regex(tmp_path: Path) -> None:
     assert stats.scanned_files == 1
     assert stats.excluded_files == 2
     assert [row["relative_path"] for row in rows] == ["keep.md"]
+
+
+def test_list_indexed_files_returns_relative_path_order(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots), [".md"])
+
+    with connect(db) as con:
+        rows = list_indexed_files(con)
+
+    assert [row.relative_path for row in rows] == ["search.md", "travel.md"]
+    assert all(Path(row.path).is_absolute() for row in rows)
+    assert all(Path(row.root_path).is_absolute() for row in rows)
+    assert all(row.size > 0 for row in rows)
+
+
+def test_cli_files_outputs_json(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots), [".md"])
+
+    result = runner.invoke(cli.app, ["files", "--db", str(db), "--json"])
+
+    assert result.exit_code == 0
+    assert '"relative_path": "search.md"' in result.stdout
+    assert '"relative_path": "travel.md"' in result.stdout
+    assert '"content_hash":' in result.stdout
 
 
 def test_index_exclude_applies_per_root_relative_path(tmp_path: Path) -> None:

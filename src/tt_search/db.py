@@ -27,6 +27,16 @@ class DbFingerprint:
     metadata: dict[str, str]
 
 
+@dataclass(frozen=True)
+class IndexedFile:
+    path: str
+    root_path: str
+    relative_path: str
+    size: int
+    mtime_ns: int
+    content_hash: str
+
+
 @contextmanager
 def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,6 +181,27 @@ def format_info(con: sqlite3.Connection) -> dict[str, object]:
         "file_count": file_count,
         "chunk_count": chunk_count,
     }
+
+
+def list_indexed_files(con: sqlite3.Connection) -> list[IndexedFile]:
+    rows = con.execute(
+        """
+        SELECT path, root_path, relative_path, size, mtime_ns, content_hash
+        FROM files
+        ORDER BY relative_path, path
+        """
+    ).fetchall()
+    return [
+        IndexedFile(
+            path=str(row["path"]),
+            root_path=str(row["root_path"]),
+            relative_path=str(row["relative_path"]),
+            size=int(row["size"]),
+            mtime_ns=int(row["mtime_ns"]),
+            content_hash=str(row["content_hash"]),
+        )
+        for row in rows
+    ]
 
 
 def as_json(data: object) -> str:
