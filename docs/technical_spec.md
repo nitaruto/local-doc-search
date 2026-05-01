@@ -136,6 +136,7 @@ search時:
 - `plamo-custom`
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
+  - document embeddingの非有限値を避けるため、modelは明示的に `float32` でloadする。
   - document chunkは `encode_document(texts, tokenizer)`、queryは `encode_query(text, tokenizer)` でembeddingする。
   - 公式要件として `sentencepiece` が必要。
 

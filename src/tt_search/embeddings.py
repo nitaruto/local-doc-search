@@ -83,13 +83,18 @@ class PlamoEmbeddingProvider:
     batch_size: int = DEFAULT_BATCH_SIZE
 
     def __post_init__(self) -> None:
+        import torch
         from transformers import AutoModel, AutoTokenizer
 
         self.backend = PLAMO_BACKEND
         self.device = resolve_device(self.device)
         self.prefix_policy = "plamo"
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
-        self._model = AutoModel.from_pretrained(self.model_name, trust_remote_code=True)
+        self._model = AutoModel.from_pretrained(
+            self.model_name,
+            trust_remote_code=True,
+            dtype=torch.float32,
+        )
         ensure_plamo_max_length(self._model)
         self._model = self._model.to(self.device)
         self._model.eval()

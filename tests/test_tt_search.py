@@ -554,7 +554,7 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         AutoModel,
         "from_pretrained",
-        lambda model_name, trust_remote_code: FakePlamoModel(),
+        lambda model_name, trust_remote_code, dtype: FakePlamoModel(),
     )
 
     provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
