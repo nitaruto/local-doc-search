@@ -57,6 +57,7 @@ SQLite DBには以下を保存する。
 - ファイル本文は段落単位でchunk化する。
 - 長すぎる段落は文字数上限で分割し、少しoverlapさせる。
 - document chunkは `passage: ...` prefixでembeddingする。
+  - 実際のprefixはmodelごとのprefix policyで決まる。
 
 ## 差分更新
 
@@ -90,6 +91,7 @@ index時:
 - `--batch-size` でindex時に一括処理するchunk数を指定できる。
 - 指定モデル名、dimensionはDB metadataへ保存する。
 - backend、resolved device、batch size、prefix policyもDB metadataへ保存する。
+- `embedding_batch_size` は再現性・監査・性能比較用の記録であり、検索時の実行やDB互換性判定には必須ではない。
 
 search時:
 
@@ -97,13 +99,28 @@ search時:
 - vector系検索ではDB metadataの `embedding_model` を読み、そのモデルでquery embeddingを生成する。
 - `--device auto|cpu|mps` でquery embeddingのdeviceだけ指定できる。
 - queryは `query: ...` prefixでembeddingする。
+  - 実際のquery prefixはDB metadataの `embedding_prefix_policy` から決める。
 - DBにembedding metadataがない場合は、reindexを促すエラーにする。
 
 対象モデルとprefix policy:
 
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
-- `pfnet/plamo-embedding-1b`: SentenceTransformer backendではprefixなし。model card上はcustom `encode_query` / `encode_document` が推奨されるため、将来backendを追加する場合に再検討する。
+- `pfnet/plamo-embedding-1b`: SentenceTransformer backendではprefixなし。model card上は `trust_remote_code=True` の `AutoModel.encode_query` / `AutoModel.encode_document` が推奨されるため、最適利用には将来 `plamo-custom` backendを追加する必要がある。
+
+現在のbackend:
+
+- `sentence-transformers` のみ。
+- `pfnet/plamo-embedding-1b` では `trust_remote_code=True` を指定してSentenceTransformerを初期化する。
+- custom codeの `encode_query` / `encode_document` は現時点では呼ばない。
+
+利用例:
+
+```bash
+uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run tt-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
+uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
+```
 
 ## Search Modes
 
