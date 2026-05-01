@@ -1,0 +1,10 @@
+.DS_Store
+_PLAN/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
