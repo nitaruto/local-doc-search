@@ -265,6 +265,39 @@ server discovery:
 - serverは検索ごとにDB fileのmtime/sizeを確認し、起動後にDBが変わっていればエラーにする。
 - `search --device cpu` のようにserverと異なるdeviceを明示した場合、そのserverは使わずdirect検索する。
 
+## MCP Server
+
+`tt-search mcp` はCodexなどのコーディングエージェント向けのstdio MCP serverとして起動する。
+
+```bash
+uv run tt-search mcp --db notes.sqlite --device auto
+```
+
+Codex設定例:
+
+```toml
+[mcp_servers.tt-search]
+command = "uv"
+args = ["run", "tt-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+cwd = "/absolute/path/to/local_search"
+```
+
+仕様:
+
+- transportはstdio。
+- JSON-RPC messageはJSON Linesと `Content-Length` framingの両方を受け付ける。
+- `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `prompts/list` に応答する。
+- toolは `search` のみ。
+- `search` toolの引数:
+  - `query`: 必須文字列。
+  - `mode`: `fts`, `vec`, `fts-vec`, `vec-fts`。デフォルトは `fts-vec`。
+  - `limit`: 結果数。デフォルトは10。
+  - `candidates`: rerank前候補数。デフォルトは50。
+  - `explain`: `fts_rank` / `vec_distance` を出力に含めるか。デフォルトはfalse。
+- tool結果はJSON文字列として返す。
+- 各resultには `path`, `relative_path`, `start_line`, `end_line`, `chunk_index`, `start_offset`, `end_offset`, `score`, `source`, `text` を含める。
+- `explain=true` の場合は `fts_rank`, `vec_distance` も含める。
+
 ## Test/Quality Gate
 
 現時点の確認コマンド:

@@ -29,6 +29,7 @@ from .embeddings import (
     create_embedding_provider,
 )
 from .indexer import index_paths
+from .mcp import run_mcp_server
 from .search import SearchMode, search_many
 from .server import run_server
 
@@ -217,6 +218,23 @@ def server(
     if not db_paths:
         raise typer.BadParameter("At least one --db is required")
     run_server(db_paths, host=host, port=port, device=device)
+
+
+@app.command()
+def mcp(
+    db: Annotated[
+        list[Path],
+        typer.Option("--db", help="SQLite DB path. Can be specified multiple times."),
+    ],
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+) -> None:
+    """Run a stdio MCP server for coding agents."""
+    db_paths = normalize_db_paths(db)
+    if not db_paths:
+        raise typer.BadParameter("At least one --db is required")
+    run_mcp_server(db_paths, device=device)
 
 
 def build_search_embedder(

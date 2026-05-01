@@ -68,3 +68,21 @@ Run a local server to avoid loading the embedding model for every query.
 uv run tt-search server --db notes.sqlite --device auto
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec
 ```
+
+Run a stdio MCP server for coding agents such as Codex.
+
+```bash
+uv run tt-search mcp --db notes.sqlite --device auto
+```
+
+Example Codex MCP configuration:
+
+```toml
+[mcp_servers.tt-search]
+command = "uv"
+args = ["run", "tt-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+cwd = "/absolute/path/to/local_search"
+```
+
+The MCP server exposes one tool, `search`, with arguments matching `tt-search search`:
+`query`, `mode`, `limit`, `candidates`, and `explain`.

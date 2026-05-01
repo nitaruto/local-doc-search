@@ -36,6 +36,7 @@ from tt_search.indexer import (
     index_paths,
     strategy_for_path,
 )
+from tt_search.mcp import McpSearchServer
 from tt_search.search import require_vec_distance, search, search_many
 
 runner = CliRunner()
@@ -261,6 +262,40 @@ def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, P
     assert [Path(result.path).name for result in results] == ["search.md"]
     assert [result.relative_path for result in results] == ["search.md"]
     assert [(result.start_line, result.end_line) for result in results] == [(1, 2)]
+
+
+def test_mcp_server_lists_and_calls_search_tool(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    server = McpSearchServer([db], device="cpu")
+
+    initialize = server.handle_message(
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}
+    )
+    tools = server.handle_message({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+    call = server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "tools/call",
+            "params": {
+                "name": "search",
+                "arguments": {"query": "日本語", "mode": "fts", "limit": 3},
+            },
+        }
+    )
+
+    assert initialize is not None
+    assert initialize["result"]["serverInfo"]["name"] == "tt-search"
+    assert tools is not None
+    assert tools["result"]["tools"][0]["name"] == "search"
+    assert call is not None
+    payload = call["result"]["content"][0]["text"]
+    assert '"relative_path": "search.md"' in payload
+    assert '"start_line": 1' in payload
+    assert '"end_line": 2' in payload
 
 
 def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
