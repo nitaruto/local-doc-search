@@ -84,5 +84,8 @@ args = ["run", "tt-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--
 cwd = "/absolute/path/to/local_search"
 ```
 
-The MCP server exposes one tool, `search`, with arguments matching `tt-search search`:
-`query`, `mode`, `limit`, `candidates`, and `explain`.
+The MCP server exposes:
+
+- `search`: search indexed text with arguments matching `tt-search search`: `query`, `mode`,
+  `limit`, `candidates`, and `explain`.
+- `roots`: list the indexed root directories for the DBs configured with `--db`.

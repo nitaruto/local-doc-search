@@ -13,6 +13,7 @@ from tt_search.db import (
     fingerprint_many,
     format_info,
     list_indexed_files,
+    list_indexed_roots,
     validate_embedding_compatible,
 )
 from tt_search.embeddings import (
@@ -176,6 +177,18 @@ def test_list_indexed_files_returns_relative_path_order(
     assert all(row.size > 0 for row in rows)
 
 
+def test_list_indexed_roots_returns_counts(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots), [".md"])
+
+    with connect(db) as con:
+        rows = list_indexed_roots(con)
+
+    assert [Path(row.root_path).name for row in rows] == ["docs1", "docs2"]
+    assert [row.file_count for row in rows] == [1, 1]
+    assert [row.chunk_count for row in rows] == [1, 1]
+
+
 def test_cli_files_outputs_json(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
     db = tmp_path / "index.sqlite"
     build_db(db, list(sample_roots), [".md"])
@@ -290,12 +303,37 @@ def test_mcp_server_lists_and_calls_search_tool(
     assert initialize is not None
     assert initialize["result"]["serverInfo"]["name"] == "tt-search"
     assert tools is not None
-    assert tools["result"]["tools"][0]["name"] == "search"
+    assert [tool["name"] for tool in tools["result"]["tools"]] == ["search", "roots"]
     assert call is not None
     payload = call["result"]["content"][0]["text"]
     assert '"relative_path": "search.md"' in payload
     assert '"start_line": 1' in payload
     assert '"end_line": 2' in payload
+
+
+def test_mcp_server_roots_tool(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots), [".md"])
+    server = McpSearchServer([db], device="cpu")
+
+    call = server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "roots",
+                "arguments": {},
+            },
+        }
+    )
+
+    assert call is not None
+    payload = call["result"]["content"][0]["text"]
+    assert '"db_path":' in payload
+    assert '"root_path":' in payload
+    assert '"file_count": 1' in payload
+    assert '"chunk_count": 1' in payload
 
 
 def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

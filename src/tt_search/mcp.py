@@ -6,7 +6,14 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from .db import as_json, fingerprint_many, normalize_db_paths, validate_embedding_compatible
+from .db import (
+    as_json,
+    connect,
+    fingerprint_many,
+    list_indexed_roots,
+    normalize_db_paths,
+    validate_embedding_compatible,
+)
 from .embeddings import DeviceOption, EmbeddingProvider, create_embedding_provider
 from .search import SearchMode, SearchResult, search_many
 
@@ -39,7 +46,7 @@ class McpSearchServer:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": [search_tool_definition()]}
+                result = {"tools": [search_tool_definition(), roots_tool_definition()]}
             elif method == "resources/list":
                 result = {"resources": []}
             elif method == "prompts/list":
@@ -61,6 +68,17 @@ class McpSearchServer:
 
     def handle_tool_call(self, params: dict[str, Any]) -> dict[str, Any]:
         name = params.get("name")
+        if name == "roots":
+            results = self.roots()
+            return {
+                "content": [
+                    {
+                        "type": "text",
+                        "text": as_json(results),
+                    }
+                ],
+                "isError": False,
+            }
         if name != "search":
             raise ValueError(f"Unknown tool: {name}")
         arguments = params.get("arguments", {})
@@ -93,6 +111,19 @@ class McpSearchServer:
             embedder=embedder,
         )
         return [result_to_mcp_dict(row, explain=explain) for row in rows]
+
+    def roots(self) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for db_path in self.db_paths:
+            with connect(db_path) as con:
+                roots = list_indexed_roots(con)
+            results.append(
+                {
+                    "db_path": str(db_path),
+                    "roots": [root.__dict__ for root in roots],
+                }
+            )
+        return results
 
     def embedder_for(self, mode: SearchMode) -> EmbeddingProvider | None:
         if mode == "fts":
@@ -146,6 +177,20 @@ def search_tool_definition() -> dict[str, Any]:
                 },
             },
             "required": ["query"],
+            "additionalProperties": False,
+        },
+    }
+
+
+def roots_tool_definition() -> dict[str, Any]:
+    return {
+        "name": "roots",
+        "description": (
+            "List indexed root directories for the SQLite DBs configured for this MCP server."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
             "additionalProperties": False,
         },
     }

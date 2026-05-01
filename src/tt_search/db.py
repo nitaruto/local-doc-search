@@ -37,6 +37,13 @@ class IndexedFile:
     content_hash: str
 
 
+@dataclass(frozen=True)
+class IndexedRoot:
+    root_path: str
+    file_count: int
+    chunk_count: int
+
+
 @contextmanager
 def connect(db_path: Path) -> Iterator[sqlite3.Connection]:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -199,6 +206,29 @@ def list_indexed_files(con: sqlite3.Connection) -> list[IndexedFile]:
             size=int(row["size"]),
             mtime_ns=int(row["mtime_ns"]),
             content_hash=str(row["content_hash"]),
+        )
+        for row in rows
+    ]
+
+
+def list_indexed_roots(con: sqlite3.Connection) -> list[IndexedRoot]:
+    rows = con.execute(
+        """
+        SELECT
+            f.root_path AS root_path,
+            count(DISTINCT f.id) AS file_count,
+            count(c.id) AS chunk_count
+        FROM files f
+        LEFT JOIN chunks c ON c.file_id = f.id
+        GROUP BY f.root_path
+        ORDER BY f.root_path
+        """
+    ).fetchall()
+    return [
+        IndexedRoot(
+            root_path=str(row["root_path"]),
+            file_count=int(row["file_count"]),
+            chunk_count=int(row["chunk_count"]),
         )
         for row in rows
     ]
