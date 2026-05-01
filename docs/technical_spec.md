@@ -35,13 +35,15 @@ SQLite DBには以下を保存する。
 - `chunks`
   - fileごとのchunk本文
   - `chunk_index`, `start_offset`, `end_offset`
+  - `start_line`, `end_line`
 - `chunks_fts`
   - `fts5(path UNINDEXED, text, tokenize='trigram')`
 - `chunk_vec`
   - `vec0(embedding float[N])`
   - `N` はindex時のembedding dimension
 
-既存DBに `root_path` / `relative_path` がない場合は、起動時に不足カラムを追加する。
+既存DBに `root_path` / `relative_path` / `start_line` / `end_line` がない場合は、起動時に不足カラムを追加する。
+古いDBへ追加した行番号は既定値になるため、正確な行番号が必要な場合は再indexする。
 
 ## Indexing
 
@@ -59,6 +61,7 @@ SQLite DBには以下を保存する。
 - 長すぎる段落は文字数上限で分割し、少しoverlapさせる。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
+- index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数をprogress表示する。
 
 ## 差分更新
 
@@ -146,12 +149,14 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 - 絶対path: `path`
 - index時rootからの相対path: `relative_path`
 - chunk番号: `chunk_index`
+- 行番号範囲: `start_line`, `end_line`
 - snippet
 - `--explain` 指定時:
   - `fts_rank`
   - `vec_distance`
 
 `--json` 指定時は `SearchResult` の内容をJSON配列として出力する。
+他エージェントから利用する場合は、`path`, `relative_path`, `start_line`, `end_line`, `text` を参照すると、該当ファイル内の検索hit範囲を特定できる。
 
 ## Multi DB Search
 

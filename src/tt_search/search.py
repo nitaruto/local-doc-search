@@ -21,6 +21,8 @@ class SearchResult:
     chunk_index: int
     start_offset: int
     end_offset: int
+    start_line: int
+    end_line: int
     text: str
     score: float
     fts_rank: float | None = None
@@ -134,6 +136,8 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
+            c.start_line AS start_line,
+            c.end_line AS end_line,
             c.text AS text,
             bm25(chunks_fts) AS fts_rank
         FROM chunks_fts
@@ -154,6 +158,8 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
+            start_line=int(row["start_line"]),
+            end_line=int(row["end_line"]),
             text=str(row["text"]),
             score=-float(row["fts_rank"]),
             fts_rank=float(row["fts_rank"]),
@@ -174,6 +180,8 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
+            c.start_line AS start_line,
+            c.end_line AS end_line,
             c.text AS text
         FROM chunks c
         JOIN files f ON f.id = c.file_id
@@ -192,6 +200,8 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
+            start_line=int(row["start_line"]),
+            end_line=int(row["end_line"]),
             text=str(row["text"]),
             score=1.0,
             fts_rank=None,
@@ -219,6 +229,8 @@ def vec_candidates(
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
+            c.start_line AS start_line,
+            c.end_line AS end_line,
             c.text AS text,
             v.distance AS vec_distance
         FROM chunk_vec v
@@ -238,6 +250,8 @@ def vec_candidates(
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
+            start_line=int(row["start_line"]),
+            end_line=int(row["end_line"]),
             text=str(row["text"]),
             score=distance_to_score(float(row["vec_distance"])),
             vec_distance=float(row["vec_distance"]),

@@ -5,6 +5,7 @@ from typing import Annotated
 
 import typer
 from rich.console import Console
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
 from .client import find_live_server, search_via_server
@@ -61,7 +62,24 @@ def index(
         batch_size=batch_size,
     )
     with connect(db) as con:
-        stats = index_paths(con, roots=root, extensions=ext, embedder=embedder, rebuild=rebuild)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            reporter = RichIndexProgress(progress)
+            stats = index_paths(
+                con,
+                roots=root,
+                extensions=ext,
+                embedder=embedder,
+                rebuild=rebuild,
+                progress=reporter,
+            )
     console.print(
         as_json(
             {
@@ -73,6 +91,28 @@ def index(
             }
         )
     )
+
+
+class RichIndexProgress:
+    def __init__(self, progress: Progress) -> None:
+        self.progress = progress
+        self.task_id: TaskID | None = None
+
+    def on_scan_complete(self, total_files: int) -> None:
+        self.task_id = self.progress.add_task("Indexing files", total=total_files)
+
+    def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
+        if self.task_id is None:
+            return
+        description = f"{status}: {path.name}"
+        if chunks:
+            description = f"{description} ({chunks} chunks)"
+        self.progress.update(self.task_id, description=description, advance=1)
+
+    def on_embedding_start(self, *, path: Path, chunks: int) -> None:
+        if self.task_id is None:
+            return
+        self.progress.update(self.task_id, description=f"embedding: {path.name} ({chunks} chunks)")
 
 
 def search_cmd(
@@ -206,7 +246,7 @@ def print_results(rows: list[object], *, explain: bool) -> None:
     columns = ["score"]
     if show_db_path:
         columns.append("db_path")
-    columns.extend(["path", "relative_path", "chunk", "snippet"])
+    columns.extend(["path", "relative_path", "lines", "chunk", "snippet"])
     table = Table(*columns)
     if explain:
         table.add_column("fts_rank")
@@ -218,7 +258,15 @@ def print_results(rows: list[object], *, explain: bool) -> None:
         values = [f"{row.score:.4f}"]
         if show_db_path:
             values.append(row.db_path or "")
-        values.extend([row.path, row.relative_path, str(row.chunk_index), snippet])
+        values.extend(
+            [
+                row.path,
+                row.relative_path,
+                f"{row.start_line}-{row.end_line}",
+                str(row.chunk_index),
+                snippet,
+            ]
+        )
         if explain:
             values.extend(
                 [

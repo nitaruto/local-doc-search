@@ -5,6 +5,7 @@ import os
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from .db import ensure_schema, serialize_vector, set_embedding_metadata
 from .embeddings import EmbeddingProvider
@@ -37,6 +38,8 @@ class Chunk:
     index: int
     start_offset: int
     end_offset: int
+    start_line: int
+    end_line: int
     text: str
 
 
@@ -47,6 +50,17 @@ class IndexStats:
     skipped_files: int = 0
     chunks: int = 0
     removed_files: int = 0
+
+
+class IndexProgress(Protocol):
+    def on_scan_complete(self, total_files: int) -> None:
+        """Called after candidate files are discovered."""
+
+    def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
+        """Called after a file is skipped, indexed, or rejected."""
+
+    def on_embedding_start(self, *, path: Path, chunks: int) -> None:
+        """Called before embedding chunks for a file."""
 
 
 def normalize_extensions(exts: list[str] | None) -> set[str]:
@@ -104,17 +118,42 @@ def chunk_text(text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
     chunks: list[Chunk] = []
     for start, end, paragraph in paragraphs:
         if len(paragraph) <= max_chars:
-            chunks.append(Chunk(len(chunks), start, end, paragraph))
+            chunks.append(
+                Chunk(
+                    len(chunks),
+                    start,
+                    end,
+                    line_number_at_offset(text, start),
+                    line_number_at_offset(text, max(start, end - 1)),
+                    paragraph,
+                )
+            )
             continue
         cursor = 0
         while cursor < len(paragraph):
             part = paragraph[cursor : cursor + max_chars]
             part_start = start + cursor
-            chunks.append(Chunk(len(chunks), part_start, part_start + len(part), part))
+            part_end = part_start + len(part)
+            chunks.append(
+                Chunk(
+                    len(chunks),
+                    part_start,
+                    part_end,
+                    line_number_at_offset(text, part_start),
+                    line_number_at_offset(text, max(part_start, part_end - 1)),
+                    part,
+                )
+            )
             if cursor + max_chars >= len(paragraph):
                 break
             cursor += max_chars - OVERLAP_CHARS
     return [chunk for chunk in chunks if chunk.text.strip()]
+
+
+def line_number_at_offset(text: str, offset: int) -> int:
+    if offset <= 0:
+        return 1
+    return text.count("\n", 0, min(offset, len(text))) + 1
 
 
 def split_paragraphs(text: str) -> list[tuple[int, int, str]]:
@@ -149,6 +188,7 @@ def index_paths(
     extensions: list[str] | None,
     embedder: EmbeddingProvider,
     rebuild: bool = False,
+    progress: IndexProgress | None = None,
 ) -> IndexStats:
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
     set_embedding_metadata(
@@ -163,6 +203,8 @@ def index_paths(
 
     allowed = normalize_extensions(extensions)
     paths = iter_candidate_files(roots, allowed)
+    if progress is not None:
+        progress.on_scan_complete(len(paths))
     seen = {str(candidate.path) for candidate in paths}
     stats = IndexStats(scanned_files=len(paths))
     removed = remove_missing_files(con, seen)
@@ -174,13 +216,21 @@ def index_paths(
         indexed = read_text_file(candidate)
         if indexed is None:
             skipped_files += 1
+            if progress is not None:
+                progress.on_file_done(path=candidate.path, status="skipped")
             continue
         if is_unchanged(con, indexed):
+            if progress is not None:
+                progress.on_file_done(path=indexed.path, status="unchanged")
             continue
         chunks = chunk_text(indexed.text)
+        if progress is not None:
+            progress.on_embedding_start(path=indexed.path, chunks=len(chunks))
         upsert_file(con, indexed, chunks, embedder)
         indexed_files += 1
         chunk_count += len(chunks)
+        if progress is not None:
+            progress.on_file_done(path=indexed.path, status="indexed", chunks=len(chunks))
 
     return IndexStats(
         scanned_files=stats.scanned_files,
@@ -267,10 +317,26 @@ def upsert_file(
     for chunk, embedding in zip(chunks, embeddings, strict=True):
         cursor = con.execute(
             """
-            INSERT INTO chunks(file_id, chunk_index, start_offset, end_offset, text)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO chunks(
+                file_id,
+                chunk_index,
+                start_offset,
+                end_offset,
+                start_line,
+                end_line,
+                text
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (file_id, chunk.index, chunk.start_offset, chunk.end_offset, chunk.text),
+            (
+                file_id,
+                chunk.index,
+                chunk.start_offset,
+                chunk.end_offset,
+                chunk.start_line,
+                chunk.end_line,
+                chunk.text,
+            ),
         )
         chunk_id = int(cursor.lastrowid)
         con.execute(

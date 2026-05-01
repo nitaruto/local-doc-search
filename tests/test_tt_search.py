@@ -48,6 +48,21 @@ class FakeEmbedder:
         )
 
 
+class RecordingProgress:
+    def __init__(self) -> None:
+        self.total_files: int | None = None
+        self.events: list[tuple[str, str, int]] = []
+
+    def on_scan_complete(self, total_files: int) -> None:
+        self.total_files = total_files
+
+    def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
+        self.events.append((status, path.name, chunks))
+
+    def on_embedding_start(self, *, path: Path, chunks: int) -> None:
+        self.events.append(("embedding", path.name, chunks))
+
+
 @pytest.fixture()
 def sample_roots(tmp_path: Path) -> tuple[Path, Path]:
     root1 = tmp_path / "docs1"
@@ -105,6 +120,7 @@ def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, P
 
     assert [Path(result.path).name for result in results] == ["search.md"]
     assert [result.relative_path for result in results] == ["search.md"]
+    assert [(result.start_line, result.end_line) for result in results] == [(1, 2)]
 
 
 def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
@@ -174,6 +190,50 @@ def test_reindex_updates_changed_file(tmp_path: Path, sample_roots: tuple[Path, 
         )
 
     assert [Path(result.path).name for result in results] == ["search.md"]
+
+
+def test_chunk_line_numbers_are_indexed(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "lines.md").write_text(
+        "title\n\nfirst paragraph\nsecond line\n\nlast paragraph\n",
+        encoding="utf-8",
+    )
+    db = tmp_path / "index.sqlite"
+    build_db(db, [root], [".md"])
+
+    with connect(db) as con:
+        rows = con.execute(
+            """
+            SELECT chunk_index, start_line, end_line, text
+            FROM chunks
+            ORDER BY chunk_index
+            """
+        ).fetchall()
+
+    assert [(row["start_line"], row["end_line"]) for row in rows] == [(1, 1), (3, 4), (6, 6)]
+
+
+def test_index_progress_reports_scan_and_file_events(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    progress = RecordingProgress()
+
+    with connect(db) as con:
+        index_paths(
+            con,
+            roots=list(sample_roots),
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            progress=progress,
+        )
+
+    assert progress.total_files == 2
+    assert ("embedding", "search.md", 1) in progress.events
+    assert ("indexed", "search.md", 1) in progress.events
+    assert ("embedding", "travel.md", 1) in progress.events
+    assert ("indexed", "travel.md", 1) in progress.events
 
 
 def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:

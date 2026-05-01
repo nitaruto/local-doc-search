@@ -8,6 +8,8 @@ It builds a SQLite database from files under one or more directories and combine
 - sqlite-vec `vec0`
 - local sentence-transformers embeddings
 
+Indexing shows progress for discovered files, skipped/unchanged files, and embedding work.
+
 ## Usage
 
 ```bash
@@ -20,6 +22,7 @@ uv run tt-search info --db notes.sqlite
 The default embedding model is `intfloat/multilingual-e5-small`.
 Search uses the embedding model stored in the SQLite DB at index time.
 Search output includes both the absolute `path` and the indexed root-relative `relative_path`.
+Search output also includes chunk line ranges so other agents can locate the hit text.
 
 Apple Silicon Metal acceleration can be selected with `--device`.
 

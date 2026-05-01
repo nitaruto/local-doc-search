@@ -68,6 +68,8 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
             chunk_index INTEGER NOT NULL,
             start_offset INTEGER NOT NULL,
             end_offset INTEGER NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL,
             text TEXT NOT NULL,
             UNIQUE(file_id, chunk_index)
         );
@@ -80,6 +82,7 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
         """
     )
     ensure_files_columns(con)
+    ensure_chunks_columns(con)
     con.execute(
         f"CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vec USING vec0(embedding float[{embedding_dim}])"
     )
@@ -117,6 +120,23 @@ def ensure_files_columns(con: sqlite3.Connection) -> None:
     if "relative_path" not in columns:
         con.execute("ALTER TABLE files ADD COLUMN relative_path TEXT")
         con.execute("UPDATE files SET relative_path = path WHERE relative_path IS NULL")
+
+
+def ensure_chunks_columns(con: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in con.execute("PRAGMA table_info(chunks)")}
+    if "start_line" not in columns:
+        con.execute("ALTER TABLE chunks ADD COLUMN start_line INTEGER")
+    if "end_line" not in columns:
+        con.execute("ALTER TABLE chunks ADD COLUMN end_line INTEGER")
+    if "start_line" not in columns or "end_line" not in columns:
+        con.execute(
+            """
+            UPDATE chunks
+            SET
+                start_line = COALESCE(start_line, 1),
+                end_line = COALESCE(end_line, 1)
+            """
+        )
 
 
 def set_metadata(con: sqlite3.Connection, key: str, value: str) -> None:
