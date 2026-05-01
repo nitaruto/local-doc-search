@@ -161,6 +161,24 @@ def test_cli_files_outputs_json(tmp_path: Path, sample_roots: tuple[Path, Path])
     assert '"content_hash":' in result.stdout
 
 
+def test_cli_files_outputs_one_file_per_line(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots), [".md"])
+
+    result = runner.invoke(cli.app, ["files", "--db", str(db)])
+
+    assert result.exit_code == 0
+    lines = result.stdout.strip().splitlines()
+    assert len(lines) == 2
+    assert all(line.startswith("relative_path=") for line in lines)
+    assert all(" path=" in line for line in lines)
+    assert all(" root_path=" in line for line in lines)
+    assert all(" content_hash=" in line for line in lines)
+    assert not any("┏" in line or "│" in line for line in lines)
+
+
 def test_index_exclude_applies_per_root_relative_path(tmp_path: Path) -> None:
     root1 = tmp_path / "root1"
     root2 = tmp_path / "root2"

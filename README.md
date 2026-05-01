@@ -33,6 +33,7 @@ Search output includes both the absolute `path` and the indexed root-relative `r
 Search output also includes chunk line ranges so other agents can locate the hit text.
 `tt-search files` lists the files currently stored in the SQLite index, including `path`,
 `root_path`, `relative_path`, `size`, `mtime_ns`, and `content_hash`.
+Without `--json`, it prints one indexed file per line as `key=value` fields.
 
 Apple Silicon Metal acceleration can be selected with `--device`.
 

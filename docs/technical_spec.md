@@ -172,7 +172,9 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 
 `tt-search files --db notes.sqlite` は、DBの `files` テーブルに保存されているindex済みファイル一覧を表示する。
 
-通常出力はtable、`--json` 指定時はJSON配列として出力する。
+通常出力は、terminal幅に合わせたtableではなく、1 file 1 lineの `key=value` 形式で出力する。
+path系の値は空白を含む場合に備えてshell風にquoteする。
+`--json` 指定時はJSON配列として出力する。
 
 出力項目:
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from shlex import quote
 from typing import Annotated
 
 import typer
@@ -262,17 +263,19 @@ def files_cmd(
     if json_output:
         console.print(as_json([row.__dict__ for row in rows]))
         return
-    table = Table("relative_path", "path", "root_path", "size", "mtime_ns", "content_hash")
     for row in rows:
-        table.add_row(
-            row.relative_path,
-            row.path,
-            row.root_path,
-            str(row.size),
-            str(row.mtime_ns),
-            row.content_hash,
+        typer.echo(
+            " ".join(
+                [
+                    f"relative_path={quote(row.relative_path)}",
+                    f"path={quote(row.path)}",
+                    f"root_path={quote(row.root_path)}",
+                    f"size={row.size}",
+                    f"mtime_ns={row.mtime_ns}",
+                    f"content_hash={row.content_hash}",
+                ]
+            )
         )
-    console.print(table)
 
 
 def print_results(rows: list[object], *, explain: bool) -> None:
