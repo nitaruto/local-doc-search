@@ -201,7 +201,9 @@ def is_unchanged(con: sqlite3.Connection, indexed: IndexedFile) -> bool:
 
 
 def delete_file(con: sqlite3.Connection, file_id: int) -> None:
-    chunk_ids = [row["id"] for row in con.execute("SELECT id FROM chunks WHERE file_id = ?", (file_id,))]
+    chunk_ids = [
+        row["id"] for row in con.execute("SELECT id FROM chunks WHERE file_id = ?", (file_id,))
+    ]
     for chunk_id in chunk_ids:
         con.execute("DELETE FROM chunks_fts WHERE rowid = ?", (chunk_id,))
         con.execute("DELETE FROM chunk_vec WHERE rowid = ?", (chunk_id,))

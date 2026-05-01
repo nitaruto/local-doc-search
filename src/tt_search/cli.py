@@ -66,7 +66,9 @@ def search_cmd(
         DEFAULT_MODEL
     ),
     explain: Annotated[bool, typer.Option("--explain", help="Show component scores.")] = False,
-    json_output: Annotated[bool, typer.Option("--json", help="Print JSON instead of a table.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print JSON instead of a table.")
+    ] = False,
 ) -> None:
     """Search indexed files."""
     embedder = None

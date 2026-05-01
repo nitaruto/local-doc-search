@@ -41,7 +41,9 @@ def sample_roots(tmp_path: Path) -> tuple[Path, Path]:
         "日本語の検索テストです。\nSQLite FTS5 trigram とベクトル検索を試します。\n",
         encoding="utf-8",
     )
-    (root1 / "cook.txt").write_text("カレーの料理メモです。\n玉ねぎを炒めます。\n", encoding="utf-8")
+    (root1 / "cook.txt").write_text(
+        "カレーの料理メモです。\n玉ねぎを炒めます。\n", encoding="utf-8"
+    )
     (root2 / "travel.md").write_text("京都旅行のメモです。\n寺院を巡ります。\n", encoding="utf-8")
     (root2 / "ignored.log").write_text("検索対象外です。\n", encoding="utf-8")
     return root1, root2
@@ -52,7 +54,9 @@ def build_db(db: Path, roots: list[Path], extensions: list[str] | None = None) -
         index_paths(con, roots=roots, extensions=extensions, embedder=FakeEmbedder())
 
 
-def test_index_multiple_roots_and_extension_filter(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+def test_index_multiple_roots_and_extension_filter(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
     db = tmp_path / "index.sqlite"
     build_db(db, list(sample_roots), [".md"])
 
@@ -132,7 +136,9 @@ def test_reindex_updates_changed_file(tmp_path: Path, sample_roots: tuple[Path, 
     root1, root2 = sample_roots
     build_db(db, [root1, root2], [".md"])
 
-    (root1 / "search.md").write_text("更新後の内容です。\n料理とカレーの話です。\n", encoding="utf-8")
+    (root1 / "search.md").write_text(
+        "更新後の内容です。\n料理とカレーの話です。\n", encoding="utf-8"
+    )
     build_db(db, [root1, root2], [".md"])
 
     with connect(db) as con:
