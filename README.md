@@ -6,7 +6,7 @@ It builds a SQLite database from files under one or more directories and combine
 
 - SQLite FTS5 with `tokenize='trigram'`
 - sqlite-vec `vec0`
-- local sentence-transformers embeddings
+- local embeddings via sentence-transformers or PLaMo custom code
 
 Indexing shows progress for discovered files, skipped/unchanged files, embedding work, and
 processed chunks per second.
@@ -46,6 +46,7 @@ Apple Silicon Metal acceleration can be selected with `--device`.
 
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```
 

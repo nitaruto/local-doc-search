@@ -7,7 +7,7 @@ from typing import Any
 
 from .client import write_registry
 from .db import fingerprint_many, fingerprints_match, validate_embedding_compatible
-from .embeddings import DeviceOption, SentenceTransformerEmbeddingProvider
+from .embeddings import DeviceOption, create_embedding_provider
 from .search import search_many
 
 
@@ -17,7 +17,7 @@ class SearchServerState:
         self.device = device
         self.fingerprints = fingerprint_many(db_paths)
         metadata = validate_embedding_compatible(self.fingerprints)
-        self.embedder = SentenceTransformerEmbeddingProvider(
+        self.embedder = create_embedding_provider(
             model_name=metadata["embedding_model"],
             device=device,
         )

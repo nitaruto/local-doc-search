@@ -25,7 +25,8 @@ from .embeddings import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MODEL,
     DeviceOption,
-    SentenceTransformerEmbeddingProvider,
+    EmbeddingProvider,
+    create_embedding_provider,
 )
 from .indexer import index_paths
 from .search import SearchMode, search_many
@@ -67,7 +68,7 @@ def index(
     """Build or update a search database."""
     if not root:
         raise typer.BadParameter("At least one --root is required")
-    embedder = SentenceTransformerEmbeddingProvider(
+    embedder = create_embedding_provider(
         model_name=model,
         device=device,
         batch_size=batch_size,
@@ -223,7 +224,7 @@ def build_search_embedder(
     *,
     mode: SearchMode,
     device: DeviceOption,
-) -> SentenceTransformerEmbeddingProvider | None:
+) -> EmbeddingProvider | None:
     if mode == "fts":
         return None
     fingerprints = fingerprint_many(db_paths)
@@ -233,7 +234,7 @@ def build_search_embedder(
         raise typer.BadParameter(
             "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
         )
-    return SentenceTransformerEmbeddingProvider(model_name=model, device=device)
+    return create_embedding_provider(model_name=model, device=device)
 
 
 def server_device_matches(registry: dict[str, object], device: DeviceOption) -> bool:

@@ -105,7 +105,7 @@ DBに保存済みの `root_path`, `relative_path`, `size`, `mtime_ns`, `content_
 
 index時:
 
-- `--model` でsentence-transformers model名を指定できる。
+- `--model` でembedding model名を指定できる。
 - `--device auto|cpu|mps` でembedding実行deviceを指定できる。
 - `auto` はPyTorch MPSが利用可能なら `mps`、不可なら `cpu` を使う。
 - `--device mps` を明示してMPSが利用できない場合はエラーにする。
@@ -127,19 +127,24 @@ search時:
 
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
-- `pfnet/plamo-embedding-1b`: SentenceTransformer backendではprefixなし。model card上は `trust_remote_code=True` の `AutoModel.encode_query` / `AutoModel.encode_document` が推奨されるため、最適利用には将来 `plamo-custom` backendを追加する必要がある。
+- `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためtt-search側では付与しない。
 
 現在のbackend:
 
-- `sentence-transformers` のみ。
-- `pfnet/plamo-embedding-1b` では `trust_remote_code=True` を指定してSentenceTransformerを初期化する。
-- custom codeの `encode_query` / `encode_document` は現時点では呼ばない。
+- `sentence-transformers`
+  - `intfloat/multilingual-e5-small`, `cl-nagoya/ruri-v3-*` など。
+- `plamo-custom`
+  - `pfnet/plamo-embedding-1b` 専用。
+  - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
+  - document chunkは `encode_document(texts, tokenizer)`、queryは `encode_query(text, tokenizer)` でembeddingする。
+  - 公式要件として `sentencepiece` が必要。
 
 利用例:
 
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
 uv run tt-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
+uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device mps
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```
 

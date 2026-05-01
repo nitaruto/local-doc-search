@@ -8,6 +8,8 @@ import numpy as np
 DEFAULT_MODEL = "intfloat/multilingual-e5-small"
 DEFAULT_BATCH_SIZE = 32
 EMBEDDING_BACKEND = "sentence-transformers"
+PLAMO_MODEL = "pfnet/plamo-embedding-1b"
+PLAMO_BACKEND = "plamo-custom"
 DeviceOption = Literal["auto", "cpu", "mps"]
 
 
@@ -74,6 +76,70 @@ class SentenceTransformerEmbeddingProvider:
         return np.asarray(vector[0], dtype=np.float32).tolist()
 
 
+@dataclass
+class PlamoEmbeddingProvider:
+    model_name: str = PLAMO_MODEL
+    device: DeviceOption = "auto"
+    batch_size: int = DEFAULT_BATCH_SIZE
+
+    def __post_init__(self) -> None:
+        from transformers import AutoModel, AutoTokenizer
+
+        self.backend = PLAMO_BACKEND
+        self.device = resolve_device(self.device)
+        self.prefix_policy = "plamo"
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
+        self._model = AutoModel.from_pretrained(self.model_name, trust_remote_code=True)
+        self._model = self._model.to(self.device)
+        self._model.eval()
+        sample = self._encode_documents(["dimension probe"])
+        self.dim = len(sample[0])
+
+    def embed_passages(self, texts: list[str]) -> list[list[float]]:
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.batch_size):
+            vectors.extend(self._encode_documents(texts[start : start + self.batch_size]))
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        import torch
+
+        with torch.inference_mode():
+            vector = self._model.encode_query(text, self._tokenizer)
+        return tensor_to_vectors(vector)[0]
+
+    def _encode_documents(self, texts: list[str]) -> list[list[float]]:
+        import torch
+
+        with torch.inference_mode():
+            vectors = self._model.encode_document(texts, self._tokenizer)
+        return tensor_to_vectors(vectors)
+
+
+def create_embedding_provider(
+    *,
+    model_name: str = DEFAULT_MODEL,
+    device: DeviceOption = "auto",
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> EmbeddingProvider:
+    if model_name == PLAMO_MODEL:
+        return PlamoEmbeddingProvider(model_name=model_name, device=device, batch_size=batch_size)
+    return SentenceTransformerEmbeddingProvider(
+        model_name=model_name,
+        device=device,
+        batch_size=batch_size,
+    )
+
+
+def tensor_to_vectors(value: object) -> list[list[float]]:
+    if hasattr(value, "detach"):
+        value = value.detach().cpu()
+    arr = np.asarray(value, dtype=np.float32)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    return [normalize_vector(row.tolist()) for row in arr]
+
+
 def resolve_device(device: DeviceOption) -> str:
     if device == "cpu":
         return "cpu"
@@ -97,7 +163,7 @@ def mps_is_available() -> bool:
 def prefix_policy_for_model(model_name: str) -> str:
     if model_name.startswith("cl-nagoya/ruri-v3-"):
         return "ruri-v3"
-    if model_name == "pfnet/plamo-embedding-1b":
+    if model_name == PLAMO_MODEL:
         return "plamo"
     return "e5"
 
@@ -119,7 +185,7 @@ def prefix_passage(text: str, prefix_policy: str) -> str:
 
 
 def requires_trust_remote_code(model_name: str) -> bool:
-    return model_name == "pfnet/plamo-embedding-1b"
+    return model_name == PLAMO_MODEL
 
 
 def normalize_vector(vector: list[float]) -> list[float]:

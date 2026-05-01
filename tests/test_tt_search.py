@@ -16,6 +16,10 @@ from tt_search.db import (
     validate_embedding_compatible,
 )
 from tt_search.embeddings import (
+    PLAMO_BACKEND,
+    PLAMO_MODEL,
+    PlamoEmbeddingProvider,
+    create_embedding_provider,
     normalize_vector,
     prefix_passage,
     prefix_policy_for_model,
@@ -509,6 +513,58 @@ def test_model_prefix_policy() -> None:
     assert prefix_passage("文章", "plamo") == "文章"
 
 
+def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPatch) -> None:
+    import numpy as np
+    from transformers import AutoModel, AutoTokenizer
+
+    calls: list[tuple[str, object]] = []
+
+    class FakeTokenizer:
+        pass
+
+    class FakePlamoModel:
+        def to(self, device: str) -> FakePlamoModel:
+            calls.append(("to", device))
+            return self
+
+        def eval(self) -> None:
+            calls.append(("eval", None))
+
+        def encode_document(self, texts: list[str], tokenizer: FakeTokenizer) -> np.ndarray:
+            calls.append(("document", texts))
+            return np.array([[3.0, 4.0, 0.0] for _ in texts], dtype=np.float32)
+
+        def encode_query(self, text: str, tokenizer: FakeTokenizer) -> np.ndarray:
+            calls.append(("query", text))
+            return np.array([0.0, 5.0, 0.0], dtype=np.float32)
+
+    monkeypatch.setattr(
+        AutoTokenizer,
+        "from_pretrained",
+        lambda model_name, trust_remote_code: FakeTokenizer(),
+    )
+    monkeypatch.setattr(
+        AutoModel,
+        "from_pretrained",
+        lambda model_name, trust_remote_code: FakePlamoModel(),
+    )
+
+    provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
+
+    assert isinstance(provider, PlamoEmbeddingProvider)
+    assert provider.backend == PLAMO_BACKEND
+    assert provider.prefix_policy == "plamo"
+    assert provider.dim == 3
+    passage_vectors = provider.embed_passages(["a", "b"])
+    assert passage_vectors[0] == pytest.approx([0.6, 0.8, 0.0])
+    assert passage_vectors[1] == pytest.approx([0.6, 0.8, 0.0])
+    assert provider.embed_query("q") == pytest.approx([0.0, 1.0, 0.0])
+    assert ("document", ["dimension probe"]) in calls
+    assert ("document", ["a"]) in calls
+    assert ("document", ["b"]) in calls
+    assert ("query", "q") in calls
+
+
 def test_cli_search_uses_model_from_db_metadata(
     tmp_path: Path, sample_roots: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -517,11 +573,11 @@ def test_cli_search_uses_model_from_db_metadata(
 
     created_models: list[str] = []
 
-    class RecordingEmbedder(FakeEmbedder):
-        def __init__(self, model_name: str, **_: object) -> None:
-            created_models.append(model_name)
+    def recording_provider(model_name: str, **_: object) -> FakeEmbedder:
+        created_models.append(model_name)
+        return FakeEmbedder()
 
-    monkeypatch.setattr(cli, "SentenceTransformerEmbeddingProvider", RecordingEmbedder)
+    monkeypatch.setattr(cli, "create_embedding_provider", recording_provider)
     cli.search_cmd(
         db=[db],
         query="検索 sqlite",
