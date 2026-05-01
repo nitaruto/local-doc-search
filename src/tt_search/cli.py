@@ -51,7 +51,6 @@ def index(
     )
 
 
-@app.command()
 def search_cmd(
     db: Annotated[Path, typer.Option("--db", help="SQLite DB path.")],
     query: Annotated[str, typer.Option("--query", "-q", help="Search query.")],
