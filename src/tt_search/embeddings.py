@@ -87,7 +87,7 @@ class PlamoEmbeddingProvider:
         from transformers import AutoModel, AutoTokenizer
 
         self.backend = PLAMO_BACKEND
-        self.device = resolve_device(self.device)
+        self.device = resolve_plamo_device(self.device)
         self.prefix_policy = "plamo"
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
         self._model = AutoModel.from_pretrained(
@@ -166,6 +166,12 @@ def resolve_device(device: DeviceOption) -> str:
     if mps_is_available():
         return "mps"
     return "cpu"
+
+
+def resolve_plamo_device(device: DeviceOption) -> str:
+    if device == "auto":
+        return "cpu"
+    return resolve_device(device)
 
 
 def mps_is_available() -> bool:

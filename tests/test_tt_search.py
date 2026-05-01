@@ -574,6 +574,50 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert ("query", ["q"]) in calls
 
 
+def test_plamo_auto_uses_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    from transformers import AutoModel, AutoTokenizer
+
+    calls: list[tuple[str, object]] = []
+
+    class FakeTokenizer:
+        pass
+
+    class FakeConfig:
+        max_position_embeddings = 1234
+
+    class FakePlamoModel:
+        config = FakeConfig()
+
+        def to(self, device: str) -> FakePlamoModel:
+            calls.append(("to", device))
+            return self
+
+        def eval(self) -> None:
+            pass
+
+        def encode_document(self, texts: list[str], tokenizer: FakeTokenizer) -> object:
+            import numpy as np
+
+            return np.array([[3.0, 4.0, 0.0] for _ in texts], dtype=np.float32)
+
+    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: True)
+    monkeypatch.setattr(
+        AutoTokenizer,
+        "from_pretrained",
+        lambda model_name, trust_remote_code: FakeTokenizer(),
+    )
+    monkeypatch.setattr(
+        AutoModel,
+        "from_pretrained",
+        lambda model_name, trust_remote_code, dtype: FakePlamoModel(),
+    )
+
+    provider = create_embedding_provider(model_name=PLAMO_MODEL, device="auto", batch_size=1)
+
+    assert provider.device == "cpu"
+    assert ("to", "cpu") in calls
+
+
 def test_ensure_plamo_max_length_preserves_existing_value() -> None:
     class FakeConfig:
         max_length = 2048

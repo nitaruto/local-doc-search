@@ -137,6 +137,7 @@ search時:
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
   - document embeddingの非有限値を避けるため、modelは明示的に `float32` でloadする。
+  - 現状、PLaMoはMPS実行で非有限値を返すケースがあるため、`--device auto` は安定性優先でCPUへ解決する。明示的な `--device mps` は指定可能だが、非有限値が出た場合はエラーにする。
   - document chunkは `encode_document(texts, tokenizer)`、queryは `encode_query(text, tokenizer)` でembeddingする。
   - 公式要件として `sentencepiece` が必要。
 
@@ -145,7 +146,7 @@ search時:
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
 uv run tt-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
-uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device mps
+uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```
 
