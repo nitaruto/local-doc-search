@@ -36,7 +36,7 @@ from tt_search.indexer import (
     index_paths,
     strategy_for_path,
 )
-from tt_search.search import search, search_many
+from tt_search.search import require_vec_distance, search, search_many
 
 runner = CliRunner()
 
@@ -652,6 +652,11 @@ def test_search_many_merges_multiple_dbs(tmp_path: Path) -> None:
 
     assert {Path(result.db_path or "").name for result in results} == {"one.sqlite", "two.sqlite"}
     assert {Path(result.path).name for result in results} == {"search.md", "travel.md"}
+
+
+def test_require_vec_distance_rejects_null_distance() -> None:
+    with pytest.raises(ValueError, match="rebuild"):
+        require_vec_distance(None)
 
 
 def test_embedding_compatibility_rejects_mismatched_model(

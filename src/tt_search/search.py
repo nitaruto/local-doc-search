@@ -253,11 +253,12 @@ def vec_candidates(
             start_line=int(row["start_line"]),
             end_line=int(row["end_line"]),
             text=str(row["text"]),
-            score=distance_to_score(float(row["vec_distance"])),
-            vec_distance=float(row["vec_distance"]),
+            score=distance_to_score(vec_distance),
+            vec_distance=vec_distance,
             source="vec",
         )
         for row in rows
+        for vec_distance in [require_vec_distance(row["vec_distance"])]
     ]
 
 
@@ -276,7 +277,7 @@ def rerank_by_vector(
     chunk_ids = [row.chunk_id for row in rows]
     placeholders = ",".join("?" for _ in chunk_ids)
     distances = {
-        int(row["rowid"]): float(row["distance"])
+        int(row["rowid"]): require_vec_distance(row["distance"])
         for row in con.execute(
             f"""
             SELECT rowid, vec_distance_l2(embedding, ?) AS distance
@@ -359,6 +360,15 @@ def distance_to_score(distance: float) -> float:
     if math.isnan(distance):
         return 0.0
     return 1.0 / (1.0 + max(distance, 0.0))
+
+
+def require_vec_distance(value: object) -> float:
+    if value is None:
+        raise ValueError(
+            "sqlite-vec returned NULL distance. The DB may contain non-finite embeddings; "
+            "rebuild it with `tt-search index --rebuild`."
+        )
+    return float(value)
 
 
 def use_like_fallback(query: str) -> bool:
