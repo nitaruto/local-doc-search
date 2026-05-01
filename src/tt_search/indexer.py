@@ -12,7 +12,7 @@ from .db import ensure_schema, serialize_vector, set_embedding_metadata
 from .embeddings import EmbeddingProvider
 
 DEFAULT_EXTENSIONS = [".txt", ".md", ".markdown", ".rst"]
-MAX_CHARS = 1200
+MAX_CHARS = 600
 OVERLAP_CHARS = 120
 
 

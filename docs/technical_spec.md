@@ -60,8 +60,8 @@ SQLite DBには以下を保存する。
 - `--exclude` は複数指定でき、1つでもmatchしたファイルはindex対象外にする。
 - `.git`, `.venv`, `__pycache__`, dot directory は走査対象から除外する。
 - UTF-8 / UTF-8 BOMとして読めないファイルはskipする。
-- ファイル本文は空行区切りの段落を抽出し、文字数上限以内で複数段落を1chunkへまとめる。
-- 単独で長すぎる段落は文字数上限で分割し、少しoverlapさせる。
+- ファイル本文は空行区切りの段落を抽出し、既定600文字の上限以内で複数段落を1chunkへまとめる。
+- 単独で長すぎる段落は600文字上限で分割し、120文字overlapさせる。
 - chunkingは拡張子ごとのstrategyで選択する構造にしている。
   - `.md`, `.markdown` は `markdown-section` strategyを使い、ATX見出し (`#` から `######`) のsection境界を越えてchunkをまとめない。
   - fenced code block内の見出し風行はsection境界として扱わない。
