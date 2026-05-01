@@ -19,3 +19,4 @@ uv run tt-search info --db notes.sqlite
 
 The default embedding model is `intfloat/multilingual-e5-small`.
 Search uses the embedding model stored in the SQLite DB at index time.
+Search output includes both the absolute `path` and the indexed root-relative `relative_path`.

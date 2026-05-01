@@ -15,8 +15,17 @@ OVERLAP_CHARS = 120
 
 
 @dataclass(frozen=True)
+class CandidateFile:
+    path: Path
+    root_path: Path
+    relative_path: Path
+
+
+@dataclass(frozen=True)
 class IndexedFile:
     path: Path
+    root_path: Path
+    relative_path: Path
     size: int
     mtime_ns: int
     content_hash: str
@@ -45,13 +54,13 @@ def normalize_extensions(exts: list[str] | None) -> set[str]:
     return {ext if ext.startswith(".") else f".{ext}" for ext in values}
 
 
-def iter_candidate_files(roots: list[Path], extensions: set[str]) -> list[Path]:
-    paths: list[Path] = []
+def iter_candidate_files(roots: list[Path], extensions: set[str]) -> list[CandidateFile]:
+    paths: dict[Path, CandidateFile] = {}
     for root in roots:
         root = root.expanduser().resolve()
         if root.is_file():
             if root.suffix in extensions:
-                paths.append(root)
+                paths[root] = CandidateFile(root, root.parent, Path(root.name))
             continue
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [
@@ -62,13 +71,16 @@ def iter_candidate_files(roots: list[Path], extensions: set[str]) -> list[Path]:
             for filename in filenames:
                 path = Path(dirpath) / filename
                 if path.suffix in extensions:
-                    paths.append(path.resolve())
-    return sorted(set(paths))
+                    resolved = path.resolve()
+                    paths.setdefault(
+                        resolved, CandidateFile(resolved, root, resolved.relative_to(root))
+                    )
+    return [paths[path] for path in sorted(paths)]
 
 
-def read_text_file(path: Path) -> IndexedFile | None:
-    stat = path.stat()
-    data = path.read_bytes()
+def read_text_file(candidate: CandidateFile) -> IndexedFile | None:
+    stat = candidate.path.stat()
+    data = candidate.path.read_bytes()
     try:
         text = data.decode("utf-8")
     except UnicodeDecodeError:
@@ -77,7 +89,9 @@ def read_text_file(path: Path) -> IndexedFile | None:
         except UnicodeDecodeError:
             return None
     return IndexedFile(
-        path=path,
+        path=candidate.path,
+        root_path=candidate.root_path,
+        relative_path=candidate.relative_path,
         size=stat.st_size,
         mtime_ns=stat.st_mtime_ns,
         content_hash=hashlib.sha256(data).hexdigest(),
@@ -142,15 +156,15 @@ def index_paths(
 
     allowed = normalize_extensions(extensions)
     paths = iter_candidate_files(roots, allowed)
-    seen = {str(path) for path in paths}
+    seen = {str(candidate.path) for candidate in paths}
     stats = IndexStats(scanned_files=len(paths))
     removed = remove_missing_files(con, seen)
 
     indexed_files = 0
     skipped_files = 0
     chunk_count = 0
-    for path in paths:
-        indexed = read_text_file(path)
+    for candidate in paths:
+        indexed = read_text_file(candidate)
         if indexed is None:
             skipped_files += 1
             continue
@@ -189,11 +203,17 @@ def remove_missing_files(con: sqlite3.Connection, seen_paths: set[str]) -> int:
 
 def is_unchanged(con: sqlite3.Connection, indexed: IndexedFile) -> bool:
     row = con.execute(
-        "SELECT size, mtime_ns, content_hash FROM files WHERE path = ?",
+        """
+        SELECT root_path, relative_path, size, mtime_ns, content_hash
+        FROM files
+        WHERE path = ?
+        """,
         (str(indexed.path),),
     ).fetchone()
     return (
         row is not None
+        and row["root_path"] == str(indexed.root_path)
+        and row["relative_path"] == str(indexed.relative_path)
         and row["size"] == indexed.size
         and row["mtime_ns"] == indexed.mtime_ns
         and row["content_hash"] == indexed.content_hash
@@ -222,8 +242,18 @@ def upsert_file(
         delete_file(con, int(old["id"]))
 
     cursor = con.execute(
-        "INSERT INTO files(path, size, mtime_ns, content_hash) VALUES (?, ?, ?, ?)",
-        (str(indexed.path), indexed.size, indexed.mtime_ns, indexed.content_hash),
+        """
+        INSERT INTO files(path, root_path, relative_path, size, mtime_ns, content_hash)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (
+            str(indexed.path),
+            str(indexed.root_path),
+            str(indexed.relative_path),
+            indexed.size,
+            indexed.mtime_ns,
+            indexed.content_hash,
+        ),
     )
     file_id = int(cursor.lastrowid)
     embeddings = embedder.embed_passages([chunk.text for chunk in chunks]) if chunks else []

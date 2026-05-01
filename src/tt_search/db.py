@@ -40,6 +40,8 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY,
             path TEXT NOT NULL UNIQUE,
+            root_path TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
             size INTEGER NOT NULL,
             mtime_ns INTEGER NOT NULL,
             content_hash TEXT NOT NULL
@@ -62,6 +64,7 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
         );
         """
     )
+    ensure_files_columns(con)
     con.execute(
         f"CREATE VIRTUAL TABLE IF NOT EXISTS chunk_vec USING vec0(embedding float[{embedding_dim}])"
     )
@@ -75,6 +78,16 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
     set_metadata(con, "embedding_dim", str(embedding_dim))
     if get_metadata(con, "created_at") is None:
         set_metadata(con, "created_at", datetime.now(UTC).isoformat())
+
+
+def ensure_files_columns(con: sqlite3.Connection) -> None:
+    columns = {row["name"] for row in con.execute("PRAGMA table_info(files)")}
+    if "root_path" not in columns:
+        con.execute("ALTER TABLE files ADD COLUMN root_path TEXT")
+        con.execute("UPDATE files SET root_path = '' WHERE root_path IS NULL")
+    if "relative_path" not in columns:
+        con.execute("ALTER TABLE files ADD COLUMN relative_path TEXT")
+        con.execute("UPDATE files SET relative_path = path WHERE relative_path IS NULL")
 
 
 def set_metadata(con: sqlite3.Connection, key: str, value: str) -> None:

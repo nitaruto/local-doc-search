@@ -63,10 +63,14 @@ def test_index_multiple_roots_and_extension_filter(
 
     with connect(db) as con:
         info = format_info(con)
+        rows = con.execute(
+            "SELECT path, relative_path FROM files ORDER BY relative_path"
+        ).fetchall()
 
     assert info["file_count"] == 2
     assert info["chunk_count"] == 2
     assert info["metadata"]["embedding_model"] == "fake"
+    assert [row["relative_path"] for row in rows] == ["search.md", "travel.md"]
 
 
 def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
@@ -84,6 +88,7 @@ def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, P
         )
 
     assert [Path(result.path).name for result in results] == ["search.md"]
+    assert [result.relative_path for result in results] == ["search.md"]
 
 
 def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

@@ -113,7 +113,7 @@ def info(
 
 
 def print_results(rows: list[object], *, explain: bool) -> None:
-    table = Table("score", "path", "chunk", "snippet")
+    table = Table("score", "path", "relative_path", "chunk", "snippet")
     if explain:
         table.add_column("fts_rank")
         table.add_column("vec_distance")
@@ -121,7 +121,7 @@ def print_results(rows: list[object], *, explain: bool) -> None:
         snippet = " ".join(row.text.split())
         if len(snippet) > 160:
             snippet = f"{snippet[:157]}..."
-        values = [f"{row.score:.4f}", row.path, str(row.chunk_index), snippet]
+        values = [f"{row.score:.4f}", row.path, row.relative_path, str(row.chunk_index), snippet]
         if explain:
             values.extend(
                 [

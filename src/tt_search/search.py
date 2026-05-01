@@ -15,6 +15,7 @@ SearchMode = Literal["fts", "vec", "fts-vec", "vec-fts"]
 class SearchResult:
     chunk_id: int
     path: str
+    relative_path: str
     chunk_index: int
     start_offset: int
     end_offset: int
@@ -60,6 +61,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
         SELECT
             c.id AS chunk_id,
             f.path AS path,
+            f.relative_path AS relative_path,
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
@@ -78,6 +80,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
         SearchResult(
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
+            relative_path=str(row["relative_path"]),
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
@@ -97,6 +100,7 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
         SELECT
             c.id AS chunk_id,
             f.path AS path,
+            f.relative_path AS relative_path,
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
@@ -113,6 +117,7 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
         SearchResult(
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
+            relative_path=str(row["relative_path"]),
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
@@ -138,6 +143,7 @@ def vec_candidates(
         SELECT
             c.id AS chunk_id,
             f.path AS path,
+            f.relative_path AS relative_path,
             c.chunk_index AS chunk_index,
             c.start_offset AS start_offset,
             c.end_offset AS end_offset,
@@ -155,6 +161,7 @@ def vec_candidates(
         SearchResult(
             chunk_id=int(row["chunk_id"]),
             path=str(row["path"]),
+            relative_path=str(row["relative_path"]),
             chunk_index=int(row["chunk_index"]),
             start_offset=int(row["start_offset"]),
             end_offset=int(row["end_offset"]),
