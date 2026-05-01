@@ -65,6 +65,63 @@ class IndexProgress(Protocol):
         """Called before embedding chunks for a file."""
 
 
+class ChunkingStrategy(Protocol):
+    name: str
+
+    def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
+        """Split file text into searchable chunks."""
+
+
+class ParagraphPackingStrategy:
+    name = "paragraph-pack"
+
+    def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
+        paragraphs = split_paragraphs(text)
+        chunks: list[Chunk] = []
+        current_parts: list[tuple[int, int, str]] = []
+
+        def flush_current() -> None:
+            if not current_parts:
+                return
+            start = current_parts[0][0]
+            end = current_parts[-1][1]
+            chunk_body = "\n\n".join(part for _, _, part in current_parts)
+            chunks.append(
+                Chunk(
+                    len(chunks),
+                    start,
+                    end,
+                    line_number_at_offset(text, start),
+                    line_number_at_offset(text, max(start, end - 1)),
+                    chunk_body,
+                )
+            )
+            current_parts.clear()
+
+        for start, end, paragraph in paragraphs:
+            if len(paragraph) > max_chars:
+                flush_current()
+                chunks.extend(split_long_paragraph(text, paragraph, start, max_chars))
+                continue
+
+            candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
+            if current_parts and len(candidate) > max_chars:
+                flush_current()
+            current_parts.append((start, end, paragraph))
+
+        flush_current()
+        return reindex_chunks(chunks)
+
+
+DEFAULT_CHUNKING_STRATEGY = ParagraphPackingStrategy()
+CHUNKING_STRATEGIES_BY_EXTENSION: dict[str, ChunkingStrategy] = {
+    ".txt": DEFAULT_CHUNKING_STRATEGY,
+    ".md": DEFAULT_CHUNKING_STRATEGY,
+    ".markdown": DEFAULT_CHUNKING_STRATEGY,
+    ".rst": DEFAULT_CHUNKING_STRATEGY,
+}
+
+
 def normalize_extensions(exts: list[str] | None) -> set[str]:
     values = exts or DEFAULT_EXTENSIONS
     return {ext if ext.startswith(".") else f".{ext}" for ext in values}
@@ -136,40 +193,18 @@ def read_text_file(candidate: CandidateFile) -> IndexedFile | None:
 
 
 def chunk_text(text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
-    paragraphs = split_paragraphs(text)
-    chunks: list[Chunk] = []
-    current_parts: list[tuple[int, int, str]] = []
+    return DEFAULT_CHUNKING_STRATEGY.chunk(text, max_chars=max_chars)
 
-    def flush_current() -> None:
-        if not current_parts:
-            return
-        start = current_parts[0][0]
-        end = current_parts[-1][1]
-        chunk_body = "\n\n".join(part for _, _, part in current_parts)
-        chunks.append(
-            Chunk(
-                len(chunks),
-                start,
-                end,
-                line_number_at_offset(text, start),
-                line_number_at_offset(text, max(start, end - 1)),
-                chunk_body,
-            )
-        )
-        current_parts.clear()
 
-    for start, end, paragraph in paragraphs:
-        if len(paragraph) > max_chars:
-            flush_current()
-            chunks.extend(split_long_paragraph(text, paragraph, start, max_chars))
-            continue
+def chunk_file(path: Path, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
+    return strategy_for_path(path).chunk(text, max_chars=max_chars)
 
-        candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
-        if current_parts and len(candidate) > max_chars:
-            flush_current()
-        current_parts.append((start, end, paragraph))
 
-    flush_current()
+def strategy_for_path(path: Path) -> ChunkingStrategy:
+    return CHUNKING_STRATEGIES_BY_EXTENSION.get(path.suffix.lower(), DEFAULT_CHUNKING_STRATEGY)
+
+
+def reindex_chunks(chunks: list[Chunk]) -> list[Chunk]:
     return [
         Chunk(
             index,
@@ -281,7 +316,7 @@ def index_paths(
             if progress is not None:
                 progress.on_file_done(path=indexed.path, status="unchanged")
             continue
-        chunks = chunk_text(indexed.text)
+        chunks = chunk_file(indexed.path, indexed.text)
         if progress is not None:
             progress.on_embedding_start(path=indexed.path, chunks=len(chunks))
         upsert_file(con, indexed, chunks, embedder)

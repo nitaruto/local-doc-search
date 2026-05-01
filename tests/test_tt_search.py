@@ -22,7 +22,13 @@ from tt_search.embeddings import (
     prefix_query,
     resolve_device,
 )
-from tt_search.indexer import chunk_text, index_paths
+from tt_search.indexer import (
+    ParagraphPackingStrategy,
+    chunk_file,
+    chunk_text,
+    index_paths,
+    strategy_for_path,
+)
 from tt_search.search import search, search_many
 
 runner = CliRunner()
@@ -364,6 +370,18 @@ def test_chunk_text_splits_long_paragraph_with_overlap() -> None:
         (160, 300),
     ]
     assert [chunk.index for chunk in chunks] == [0, 1, 2]
+
+
+def test_chunk_strategy_is_selected_by_extension() -> None:
+    assert isinstance(strategy_for_path(Path("notes.md")), ParagraphPackingStrategy)
+    assert isinstance(strategy_for_path(Path("notes.txt")), ParagraphPackingStrategy)
+    assert isinstance(strategy_for_path(Path("notes.unknown")), ParagraphPackingStrategy)
+
+
+def test_chunk_file_uses_selected_strategy() -> None:
+    chunks = chunk_file(Path("notes.md"), "aaa\n\nbbb\n", max_chars=10)
+
+    assert [chunk.text for chunk in chunks] == ["aaa\n\nbbb"]
 
 
 def test_index_progress_reports_scan_and_file_events(

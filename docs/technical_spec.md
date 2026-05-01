@@ -62,6 +62,9 @@ SQLite DBには以下を保存する。
 - UTF-8 / UTF-8 BOMとして読めないファイルはskipする。
 - ファイル本文は空行区切りの段落を抽出し、文字数上限以内で複数段落を1chunkへまとめる。
 - 単独で長すぎる段落は文字数上限で分割し、少しoverlapさせる。
+- chunkingは拡張子ごとのstrategyで選択する構造にしている。
+  - 現時点では `.txt`, `.md`, `.markdown`, `.rst` は同じ `paragraph-pack` strategyを使う。
+  - 将来はMarkdown見出し単位、reStructuredText構造単位、code block考慮などを拡張子別に追加できる。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
 - index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数、累計処理chunk数、1秒あたりの処理chunk数をprogress表示する。
