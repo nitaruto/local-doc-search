@@ -183,17 +183,11 @@ def search_cmd(
 app.command(name="search")(search_cmd)
 
 
-@app.command(context_settings={"allow_extra_args": True})
+@app.command()
 def server(
-    ctx: typer.Context,
     db: Annotated[
         list[Path],
-        typer.Option(
-            "--db",
-            help=(
-                "SQLite DB path. Can be repeated, or followed by additional DB paths for server."
-            ),
-        ),
+        typer.Option("--db", help="SQLite DB path. Can be specified multiple times."),
     ],
     device: Annotated[
         DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
@@ -202,7 +196,7 @@ def server(
     port: Annotated[int, typer.Option("--port", min=0, help="Bind port. Use 0 for auto.")] = 0,
 ) -> None:
     """Run a local search server for one or more compatible DBs."""
-    db_paths = normalize_db_paths([*db, *(Path(arg) for arg in ctx.args)])
+    db_paths = normalize_db_paths(db)
     if not db_paths:
         raise typer.BadParameter("At least one --db is required")
     run_server(db_paths, host=host, port=port, device=device)
