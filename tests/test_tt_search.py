@@ -23,6 +23,7 @@ from tt_search.embeddings import (
     resolve_device,
 )
 from tt_search.indexer import (
+    MarkdownSectionStrategy,
     ParagraphPackingStrategy,
     chunk_file,
     chunk_text,
@@ -373,7 +374,8 @@ def test_chunk_text_splits_long_paragraph_with_overlap() -> None:
 
 
 def test_chunk_strategy_is_selected_by_extension() -> None:
-    assert isinstance(strategy_for_path(Path("notes.md")), ParagraphPackingStrategy)
+    assert isinstance(strategy_for_path(Path("notes.md")), MarkdownSectionStrategy)
+    assert isinstance(strategy_for_path(Path("notes.markdown")), MarkdownSectionStrategy)
     assert isinstance(strategy_for_path(Path("notes.txt")), ParagraphPackingStrategy)
     assert isinstance(strategy_for_path(Path("notes.unknown")), ParagraphPackingStrategy)
 
@@ -382,6 +384,25 @@ def test_chunk_file_uses_selected_strategy() -> None:
     chunks = chunk_file(Path("notes.md"), "aaa\n\nbbb\n", max_chars=10)
 
     assert [chunk.text for chunk in chunks] == ["aaa\n\nbbb"]
+
+
+def test_markdown_chunks_do_not_cross_section_boundaries() -> None:
+    text = "# A\n\npara a\n\n# B\n\npara b\n"
+
+    chunks = chunk_file(Path("notes.md"), text, max_chars=100)
+
+    assert [chunk.text for chunk in chunks] == ["# A\n\npara a", "# B\n\npara b"]
+    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (5, 7)]
+
+
+def test_markdown_heading_inside_fenced_code_is_not_section_boundary() -> None:
+    text = "# A\n\n```\n# not heading\n```\n\npara a\n\n# B\n\npara b\n"
+
+    chunks = chunk_file(Path("notes.md"), text, max_chars=100)
+
+    assert len(chunks) == 2
+    assert chunks[0].text == "# A\n\n```\n# not heading\n```\n\npara a"
+    assert chunks[1].text == "# B\n\npara b"
 
 
 def test_index_progress_reports_scan_and_file_events(

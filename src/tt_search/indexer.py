@@ -76,48 +76,69 @@ class ParagraphPackingStrategy:
     name = "paragraph-pack"
 
     def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
-        paragraphs = split_paragraphs(text)
+        return chunk_paragraphs(text, split_paragraphs(text), max_chars=max_chars)
+
+
+class MarkdownSectionStrategy:
+    name = "markdown-section"
+
+    def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
         chunks: list[Chunk] = []
-        current_parts: list[tuple[int, int, str]] = []
-
-        def flush_current() -> None:
-            if not current_parts:
-                return
-            start = current_parts[0][0]
-            end = current_parts[-1][1]
-            chunk_body = "\n\n".join(part for _, _, part in current_parts)
-            chunks.append(
-                Chunk(
-                    len(chunks),
-                    start,
-                    end,
-                    line_number_at_offset(text, start),
-                    line_number_at_offset(text, max(start, end - 1)),
-                    chunk_body,
-                )
-            )
-            current_parts.clear()
-
-        for start, end, paragraph in paragraphs:
-            if len(paragraph) > max_chars:
-                flush_current()
-                chunks.extend(split_long_paragraph(text, paragraph, start, max_chars))
-                continue
-
-            candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
-            if current_parts and len(candidate) > max_chars:
-                flush_current()
-            current_parts.append((start, end, paragraph))
-
-        flush_current()
+        for section_start, section_end in split_markdown_sections(text):
+            section_text = text[section_start:section_end]
+            paragraphs = [
+                (section_start + start, section_start + end, paragraph)
+                for start, end, paragraph in split_paragraphs(section_text)
+            ]
+            chunks.extend(chunk_paragraphs(text, paragraphs, max_chars=max_chars))
         return reindex_chunks(chunks)
 
 
+def chunk_paragraphs(
+    text: str, paragraphs: list[tuple[int, int, str]], *, max_chars: int = MAX_CHARS
+) -> list[Chunk]:
+    chunks: list[Chunk] = []
+    current_parts: list[tuple[int, int, str]] = []
+
+    def flush_current() -> None:
+        if not current_parts:
+            return
+        start = current_parts[0][0]
+        end = current_parts[-1][1]
+        chunk_body = "\n\n".join(part for _, _, part in current_parts)
+        chunks.append(
+            Chunk(
+                len(chunks),
+                start,
+                end,
+                line_number_at_offset(text, start),
+                line_number_at_offset(text, max(start, end - 1)),
+                chunk_body,
+            )
+        )
+        current_parts.clear()
+
+    for start, end, paragraph in paragraphs:
+        if len(paragraph) > max_chars:
+            flush_current()
+            chunks.extend(split_long_paragraph(text, paragraph, start, max_chars))
+            continue
+
+        candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
+        if current_parts and len(candidate) > max_chars:
+            flush_current()
+        current_parts.append((start, end, paragraph))
+
+    flush_current()
+    return reindex_chunks(chunks)
+
+
 DEFAULT_CHUNKING_STRATEGY = ParagraphPackingStrategy()
+MARKDOWN_CHUNKING_STRATEGY = MarkdownSectionStrategy()
 CHUNKING_STRATEGIES_BY_EXTENSION: dict[str, ChunkingStrategy] = {
     ".txt": DEFAULT_CHUNKING_STRATEGY,
-    ".md": DEFAULT_CHUNKING_STRATEGY,
-    ".markdown": DEFAULT_CHUNKING_STRATEGY,
+    ".md": MARKDOWN_CHUNKING_STRATEGY,
+    ".markdown": MARKDOWN_CHUNKING_STRATEGY,
     ".rst": DEFAULT_CHUNKING_STRATEGY,
 }
 
@@ -270,6 +291,42 @@ def split_paragraphs(text: str) -> list[tuple[int, int, str]]:
     if not paragraphs and text.strip():
         paragraphs.append((start, len(text), text.strip()))
     return paragraphs
+
+
+def split_markdown_sections(text: str) -> list[tuple[int, int]]:
+    if not text:
+        return []
+
+    sections: list[tuple[int, int]] = []
+    section_start = 0
+    offset = 0
+    fence_marker: str | None = None
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if fence_marker is None:
+            marker = markdown_fence_marker(stripped)
+            if marker is not None:
+                fence_marker = marker
+            elif is_markdown_heading(stripped) and offset != section_start:
+                sections.append((section_start, offset))
+                section_start = offset
+        elif stripped.startswith(fence_marker):
+            fence_marker = None
+        offset += len(line)
+    sections.append((section_start, len(text)))
+    return [(start, end) for start, end in sections if start < end]
+
+
+def is_markdown_heading(stripped_line: str) -> bool:
+    return re.match(r"^#{1,6}\s+\S", stripped_line) is not None
+
+
+def markdown_fence_marker(stripped_line: str) -> str | None:
+    match = re.match(r"^(`{3,}|~{3,})", stripped_line)
+    if match is None:
+        return None
+    marker = match.group(1)
+    return marker[0] * len(marker)
 
 
 def index_paths(

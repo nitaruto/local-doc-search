@@ -14,6 +14,7 @@ Short paragraphs are packed into chunks up to the configured character limit; ve
 paragraphs are split with overlap.
 Chunking is selected through extension-based strategies so format-specific splitting can be
 added without changing the indexing pipeline.
+Markdown chunks do not cross ATX heading section boundaries.
 
 ## Usage
 
