@@ -21,6 +21,10 @@ SQLite DBには以下を保存する。
   - `schema_version`
   - `embedding_model`
   - `embedding_dim`
+  - `embedding_backend`
+  - `embedding_device`
+  - `embedding_batch_size`
+  - `embedding_prefix_policy`
   - `created_at`
 - `files`
   - 絶対path: `path`
@@ -80,14 +84,26 @@ DBに保存済みの `root_path`, `relative_path`, `size`, `mtime_ns`, `content_
 index時:
 
 - `--model` でsentence-transformers model名を指定できる。
+- `--device auto|cpu|mps` でembedding実行deviceを指定できる。
+- `auto` はPyTorch MPSが利用可能なら `mps`、不可なら `cpu` を使う。
+- `--device mps` を明示してMPSが利用できない場合はエラーにする。
+- `--batch-size` でindex時に一括処理するchunk数を指定できる。
 - 指定モデル名、dimensionはDB metadataへ保存する。
+- backend、resolved device、batch size、prefix policyもDB metadataへ保存する。
 
 search時:
 
 - `--model` は指定しない。
 - vector系検索ではDB metadataの `embedding_model` を読み、そのモデルでquery embeddingを生成する。
+- `--device auto|cpu|mps` でquery embeddingのdeviceだけ指定できる。
 - queryは `query: ...` prefixでembeddingする。
 - DBにembedding metadataがない場合は、reindexを促すエラーにする。
+
+対象モデルとprefix policy:
+
+- `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
+- `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
+- `pfnet/plamo-embedding-1b`: SentenceTransformer backendではprefixなし。model card上はcustom `encode_query` / `encode_document` が推奨されるため、将来backendを追加する場合に再検討する。
 
 ## Search Modes
 

@@ -80,6 +80,20 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
         set_metadata(con, "created_at", datetime.now(UTC).isoformat())
 
 
+def set_embedding_metadata(
+    con: sqlite3.Connection,
+    *,
+    backend: str,
+    device: str,
+    batch_size: int,
+    prefix_policy: str,
+) -> None:
+    set_metadata(con, "embedding_backend", backend)
+    set_metadata(con, "embedding_device", device)
+    set_metadata(con, "embedding_batch_size", str(batch_size))
+    set_metadata(con, "embedding_prefix_policy", prefix_policy)
+
+
 def ensure_files_columns(con: sqlite3.Connection) -> None:
     columns = {row["name"] for row in con.execute("PRAGMA table_info(files)")}
     if "root_path" not in columns:

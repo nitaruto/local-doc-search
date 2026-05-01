@@ -8,7 +8,12 @@ from rich.console import Console
 from rich.table import Table
 
 from .db import as_json, connect, format_info, get_metadata
-from .embeddings import DEFAULT_MODEL, SentenceTransformerEmbeddingProvider
+from .embeddings import (
+    DEFAULT_BATCH_SIZE,
+    DEFAULT_MODEL,
+    DeviceOption,
+    SentenceTransformerEmbeddingProvider,
+)
 from .indexer import index_paths
 from .search import SearchMode, search
 
@@ -30,12 +35,22 @@ def index(
     model: Annotated[str, typer.Option("--model", help="sentence-transformers model name.")] = (
         DEFAULT_MODEL
     ),
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    batch_size: Annotated[
+        int, typer.Option("--batch-size", min=1, help="Embedding batch size for indexing.")
+    ] = DEFAULT_BATCH_SIZE,
     rebuild: Annotated[bool, typer.Option("--rebuild", help="Clear existing index first.")] = False,
 ) -> None:
     """Build or update a search database."""
     if not root:
         raise typer.BadParameter("At least one --root is required")
-    embedder = SentenceTransformerEmbeddingProvider(model_name=model)
+    embedder = SentenceTransformerEmbeddingProvider(
+        model_name=model,
+        device=device,
+        batch_size=batch_size,
+    )
     with connect(db) as con:
         stats = index_paths(con, roots=root, extensions=ext, embedder=embedder, rebuild=rebuild)
     console.print(
@@ -61,6 +76,9 @@ def search_cmd(
     candidates: Annotated[
         int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
     ] = 50,
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
     explain: Annotated[bool, typer.Option("--explain", help="Show component scores.")] = False,
     json_output: Annotated[
         bool, typer.Option("--json", help="Print JSON instead of a table.")
@@ -75,7 +93,7 @@ def search_cmd(
                 raise typer.BadParameter(
                     "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
                 )
-            embedder = SentenceTransformerEmbeddingProvider(model_name=model)
+            embedder = SentenceTransformerEmbeddingProvider(model_name=model, device=device)
         rows = search(
             con,
             query=query,

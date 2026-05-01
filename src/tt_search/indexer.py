@@ -6,7 +6,7 @@ import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 
-from .db import ensure_schema, serialize_vector
+from .db import ensure_schema, serialize_vector, set_embedding_metadata
 from .embeddings import EmbeddingProvider
 
 DEFAULT_EXTENSIONS = [".txt", ".md", ".markdown", ".rst"]
@@ -151,6 +151,13 @@ def index_paths(
     rebuild: bool = False,
 ) -> IndexStats:
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
+    set_embedding_metadata(
+        con,
+        backend=getattr(embedder, "backend", "unknown"),
+        device=getattr(embedder, "device", "unknown"),
+        batch_size=getattr(embedder, "batch_size", 0),
+        prefix_policy=getattr(embedder, "prefix_policy", "unknown"),
+    )
     if rebuild:
         clear_index(con)
 

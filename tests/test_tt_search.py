@@ -6,7 +6,13 @@ import pytest
 
 from tt_search import cli
 from tt_search.db import connect, ensure_schema, format_info
-from tt_search.embeddings import normalize_vector
+from tt_search.embeddings import (
+    normalize_vector,
+    prefix_passage,
+    prefix_policy_for_model,
+    prefix_query,
+    resolve_device,
+)
 from tt_search.indexer import index_paths
 from tt_search.search import search
 
@@ -14,6 +20,10 @@ from tt_search.search import search
 class FakeEmbedder:
     model_name = "fake"
     dim = 3
+    backend = "fake"
+    device = "cpu"
+    batch_size = 2
+    prefix_policy = "fake"
 
     def embed_passages(self, texts: list[str]) -> list[list[float]]:
         return [self._embed(text) for text in texts]
@@ -168,6 +178,44 @@ def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:
             ensure_schema(con, embedding_dim=4, embedding_model="other")
 
 
+def test_embedding_metadata_is_saved(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+
+    with connect(db) as con:
+        info = format_info(con)
+
+    assert info["metadata"]["embedding_backend"] == "fake"
+    assert info["metadata"]["embedding_device"] == "cpu"
+    assert info["metadata"]["embedding_batch_size"] == "2"
+    assert info["metadata"]["embedding_prefix_policy"] == "fake"
+
+
+def test_device_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: True)
+    assert resolve_device("auto") == "mps"
+    assert resolve_device("mps") == "mps"
+
+    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: False)
+    assert resolve_device("auto") == "cpu"
+    with pytest.raises(ValueError):
+        resolve_device("mps")
+
+
+def test_model_prefix_policy() -> None:
+    assert prefix_policy_for_model("intfloat/multilingual-e5-small") == "e5"
+    assert prefix_query("検索", "e5") == "query: 検索"
+    assert prefix_passage("文章", "e5") == "passage: 文章"
+
+    assert prefix_policy_for_model("cl-nagoya/ruri-v3-70m") == "ruri-v3"
+    assert prefix_query("検索", "ruri-v3") == "検索クエリ: 検索"
+    assert prefix_passage("文章", "ruri-v3") == "検索文書: 文章"
+
+    assert prefix_policy_for_model("pfnet/plamo-embedding-1b") == "plamo"
+    assert prefix_query("検索", "plamo") == "検索"
+    assert prefix_passage("文章", "plamo") == "文章"
+
+
 def test_cli_search_uses_model_from_db_metadata(
     tmp_path: Path, sample_roots: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -177,7 +225,7 @@ def test_cli_search_uses_model_from_db_metadata(
     created_models: list[str] = []
 
     class RecordingEmbedder(FakeEmbedder):
-        def __init__(self, model_name: str) -> None:
+        def __init__(self, model_name: str, **_: object) -> None:
             created_models.append(model_name)
 
     monkeypatch.setattr(cli, "SentenceTransformerEmbeddingProvider", RecordingEmbedder)
