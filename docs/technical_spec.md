@@ -64,7 +64,7 @@ SQLite DBには以下を保存する。
 - 単独で長すぎる段落は文字数上限で分割し、少しoverlapさせる。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
-- index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数をprogress表示する。
+- index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数、累計処理chunk数、1秒あたりの処理chunk数をprogress表示する。
 
 exclude例:
 

@@ -68,6 +68,19 @@ class RecordingProgress:
         self.events.append(("embedding", path.name, chunks))
 
 
+class FakeRichProgress:
+    def __init__(self) -> None:
+        self.added: list[tuple[str, int]] = []
+        self.updates: list[dict[str, object]] = []
+
+    def add_task(self, description: str, *, total: int) -> int:
+        self.added.append((description, total))
+        return 1
+
+    def update(self, task_id: int, **kwargs: object) -> None:
+        self.updates.append({"task_id": task_id, **kwargs})
+
+
 @pytest.fixture()
 def sample_roots(tmp_path: Path) -> tuple[Path, Path]:
     root1 = tmp_path / "docs1"
@@ -373,6 +386,21 @@ def test_index_progress_reports_scan_and_file_events(
     assert ("indexed", "search.md", 1) in progress.events
     assert ("embedding", "travel.md", 1) in progress.events
     assert ("indexed", "travel.md", 1) in progress.events
+
+
+def test_rich_index_progress_reports_chunk_rate() -> None:
+    times = iter([0.0, 0.0, 1.0, 2.0])
+    progress = FakeRichProgress()
+    reporter = cli.RichIndexProgress(progress, clock=lambda: next(times))
+
+    reporter.on_scan_complete(2)
+    reporter.on_embedding_start(path=Path("a.md"), chunks=3)
+    reporter.on_file_done(path=Path("a.md"), status="indexed", chunks=3)
+
+    assert progress.added == [("Indexing files", 2)]
+    descriptions = [str(update["description"]) for update in progress.updates]
+    assert "total=0 chunks, 0.00 chunks/s" in descriptions[0]
+    assert "total=3 chunks, 1.50 chunks/s" in descriptions[1]
 
 
 def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from shlex import quote
+from time import perf_counter
 from typing import Annotated
 
 import typer
@@ -105,25 +107,39 @@ def index(
 
 
 class RichIndexProgress:
-    def __init__(self, progress: Progress) -> None:
+    def __init__(self, progress: Progress, *, clock: Callable[[], float] = perf_counter) -> None:
         self.progress = progress
         self.task_id: TaskID | None = None
+        self.clock = clock
+        self.started_at = clock()
+        self.processed_chunks = 0
 
     def on_scan_complete(self, total_files: int) -> None:
+        self.started_at = self.clock()
         self.task_id = self.progress.add_task("Indexing files", total=total_files)
 
     def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
         if self.task_id is None:
             return
+        self.processed_chunks += chunks
         description = f"{status}: {path.name}"
         if chunks:
             description = f"{description} ({chunks} chunks)"
+        description = f"{description} [{self.chunk_rate_label()}]"
         self.progress.update(self.task_id, description=description, advance=1)
 
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
         if self.task_id is None:
             return
-        self.progress.update(self.task_id, description=f"embedding: {path.name} ({chunks} chunks)")
+        self.progress.update(
+            self.task_id,
+            description=f"embedding: {path.name} ({chunks} chunks) [{self.chunk_rate_label()}]",
+        )
+
+    def chunk_rate_label(self) -> str:
+        elapsed = max(self.clock() - self.started_at, 1e-9)
+        rate = self.processed_chunks / elapsed
+        return f"total={self.processed_chunks} chunks, {rate:.2f} chunks/s"
 
 
 def search_cmd(
