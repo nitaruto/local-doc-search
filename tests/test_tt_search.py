@@ -423,6 +423,58 @@ def test_cli_search_uses_model_from_db_metadata(
     assert created_models == ["fake"]
 
 
+def test_cli_server_accepts_extra_db_paths_after_db_option(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    db1.write_text("", encoding="utf-8")
+    db2.write_text("", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def fake_run_server(
+        db_paths: list[Path], *, host: str, port: int, device: cli.DeviceOption
+    ) -> None:
+        received["db_paths"] = db_paths
+        received["host"] = host
+        received["port"] = port
+        received["device"] = device
+
+    monkeypatch.setattr(cli, "run_server", fake_run_server)
+
+    result = runner.invoke(
+        cli.app,
+        ["server", "--db", str(db1), str(db2), "--device", "cpu", "--port", "8765"],
+    )
+
+    assert result.exit_code == 0
+    assert received["db_paths"] == sorted([db1.resolve(), db2.resolve()])
+    assert received["device"] == "cpu"
+    assert received["port"] == 8765
+
+
+def test_cli_server_keeps_repeated_db_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    db1.write_text("", encoding="utf-8")
+    db2.write_text("", encoding="utf-8")
+    received: dict[str, object] = {}
+
+    def fake_run_server(
+        db_paths: list[Path], *, host: str, port: int, device: cli.DeviceOption
+    ) -> None:
+        received["db_paths"] = db_paths
+
+    monkeypatch.setattr(cli, "run_server", fake_run_server)
+
+    result = runner.invoke(cli.app, ["server", "--db", str(db1), "--db", str(db2)])
+
+    assert result.exit_code == 0
+    assert received["db_paths"] == sorted([db1.resolve(), db2.resolve()])
+
+
 def test_search_many_merges_multiple_dbs(tmp_path: Path) -> None:
     root1 = tmp_path / "root1"
     root2 = tmp_path / "root2"

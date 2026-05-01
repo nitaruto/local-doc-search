@@ -221,6 +221,7 @@ vector系検索で一致が必要なmetadata:
 
 ```bash
 uv run tt-search server --db notes.sqlite --db work.sqlite --device auto
+uv run tt-search server --db notes.sqlite work.sqlite --device auto
 ```
 
 `tt-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
@@ -240,6 +241,7 @@ server discovery:
 注意:
 
 - server起動時にDB metadataを読み、vector系検索用のembedderを1回だけloadする。
+- `server` の `--db` は従来どおり複数回指定できるほか、`--db A.sqlite B.sqlite` のように後続の余り引数をDB pathとして扱う。
 - indexでDBを更新した後はserver再起動を推奨する。
 - serverは検索ごとにDB fileのmtime/sizeを確認し、起動後にDBが変わっていればエラーにする。
 - `search --device cpu` のようにserverと異なるdeviceを明示した場合、そのserverは使わずdirect検索する。
