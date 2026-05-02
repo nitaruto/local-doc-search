@@ -8,7 +8,7 @@ from typing import Any
 from .client import write_registry
 from .db import fingerprint_many, fingerprints_match, validate_embedding_compatible
 from .embeddings import DeviceOption, create_embedding_provider
-from .search import search_many
+from .search import resolve_search, search_many
 
 
 class SearchServerState:
@@ -55,11 +55,35 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
         mode = payload.get("mode", "fts-vec")
         if mode not in {"fts", "vec", "fts-vec", "vec-fts"}:
             raise ValueError(f"Unknown mode: {mode}")
-        embedder = None if mode == "fts" else self.server.state.embedder
+        resolved = resolve_search(
+            query=optional_payload_str(payload, "query"),
+            pattern=None,
+            mode=mode,
+        )
+        if payload.get("vector_query") is not None or payload.get("fts_query") is not None:
+            resolved = resolve_search(
+                query=optional_payload_str(payload, "vector_query"),
+                pattern=(
+                    optional_payload_str(payload, "fts_query")
+                    if bool(payload.get("fts_is_pattern", False))
+                    else None
+                ),
+                mode=mode,
+            )
+            if not bool(payload.get("fts_is_pattern", False)):
+                resolved = resolve_search(
+                    query=optional_payload_str(payload, "vector_query")
+                    or optional_payload_str(payload, "fts_query"),
+                    pattern=None,
+                    mode=mode,
+                )
+        embedder = None if resolved.mode == "fts" else self.server.state.embedder
         return search_many(
             self.server.state.db_paths,
-            query=str(payload["query"]),
-            mode=mode,
+            vector_query=resolved.vector_query,
+            fts_query=resolved.fts_query,
+            fts_is_pattern=resolved.fts_is_pattern,
+            mode=resolved.mode,
             limit=int(payload.get("limit", 10)),
             candidates=int(payload.get("candidates", 50)),
             embedder=embedder,
@@ -79,6 +103,13 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, format: str, *args: object) -> None:
         return
+
+
+def optional_payload_str(payload: dict[str, Any], key: str) -> str | None:
+    value = payload.get(key)
+    if value is None:
+        return None
+    return str(value)
 
 
 class SearchHTTPServer(ThreadingHTTPServer):

@@ -185,7 +185,28 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 - `vec-fts`
   - vector検索で候補を取り、FTS rankまたはLIKE一致でrerankする。
 
-3文字未満のqueryはFTS5 trigramの `MATCH` では扱いづらいため、`LIKE` fallbackで候補取得または文字一致スコア計算を行う。
+query入力:
+
+- `--query`
+  - semantic/vector検索用の自然文query。
+  - FTSで使う場合はFTS5構文ではなくリテラルphraseとして扱う。
+- `--pattern`
+  - SQLite FTS5 `MATCH` に渡すpattern。
+  - `AND`, `OR`, `NOT`, `NEAR`, prefixなどFTS5 query syntaxをそのまま使える。
+
+mode省略時の推定:
+
+- `--query` のみ: `vec`
+- `--pattern` のみ: `fts`
+- `--query` + `--pattern`: `vec-fts`
+
+hybrid時の入力:
+
+- vector側は `--query` を使う。
+- FTS側は `--pattern` があれば `--pattern` を使い、無ければ `--query` をリテラルphraseとして使う。
+- `--query` + `--pattern` + `--mode fts-vec` は、FTS候補を `--pattern` で取得し、`--query` のvectorでrerankする。
+
+3文字未満のリテラルqueryはFTS5 trigramの `MATCH` では扱いづらいため、`LIKE` fallbackで候補取得または文字一致スコア計算を行う。`--pattern` 指定時はFTS5構文を尊重し、LIKE fallbackしない。
 
 ## Codex History Search
 
@@ -224,6 +245,7 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 uv run tt-search codex-index --rebuild
 uv run tt-search codex-server --device auto
 uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
+uv run tt-search codex-search --pattern "実装 OR エラー"
 uv run tt-search codex-search --query "以前相談した内容" --json
 ```
 
@@ -356,8 +378,10 @@ cwd = "/absolute/path/to/local_search"
 - `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `prompts/list` に応答する。
 - toolは `search` と `roots`。
 - `search` toolの引数:
-  - `query`: 必須文字列。
-  - `mode`: `fts`, `vec`, `fts-vec`, `vec-fts`。デフォルトは `fts-vec`。
+  - `query`: semantic/vector検索用文字列。
+  - `pattern`: SQLite FTS5 `MATCH` に渡すpattern。`AND`, `OR`, `NOT`, `NEAR` などを使える。
+  - `query` と `pattern` の少なくとも一方が必須。
+  - `mode`: `fts`, `vec`, `fts-vec`, `vec-fts`。省略時はCLIと同じく、`query`のみで`vec`、`pattern`のみで`fts`、両方指定で`vec-fts`。
   - `limit`: 結果数。デフォルトは10。
   - `candidates`: rerank前候補数。デフォルトは50。
   - `explain`: `fts_rank` / `vec_distance` を出力に含めるか。デフォルトはfalse。

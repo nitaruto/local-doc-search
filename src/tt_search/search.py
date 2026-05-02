@@ -10,6 +10,8 @@ from .db import connect, ensure_chunks_columns, ensure_files_columns, serialize_
 from .embeddings import EmbeddingProvider
 
 SearchMode = Literal["fts", "vec", "fts-vec", "vec-fts"]
+VECTOR_MODES = {"vec", "fts-vec", "vec-fts"}
+FTS_MODES = {"fts", "fts-vec", "vec-fts"}
 
 
 @dataclass(frozen=True)
@@ -37,10 +39,58 @@ class SearchResult:
     line_no: int | None = None
 
 
+@dataclass(frozen=True)
+class ResolvedSearch:
+    mode: SearchMode
+    vector_query: str | None
+    fts_query: str | None
+    fts_is_pattern: bool
+
+
+def resolve_search(
+    *,
+    query: str | None,
+    pattern: str | None,
+    mode: SearchMode | None,
+) -> ResolvedSearch:
+    query = normalize_search_text(query)
+    pattern = normalize_search_text(pattern)
+    if query is None and pattern is None:
+        raise ValueError("Either query or pattern is required")
+    if mode is None:
+        if query is not None and pattern is not None:
+            mode = "vec-fts"
+        elif query is not None:
+            mode = "vec"
+        else:
+            mode = "fts"
+    if mode in VECTOR_MODES and query is None:
+        raise ValueError("Vector search modes require --query")
+    fts_query = pattern if pattern is not None else query
+    if mode in FTS_MODES and fts_query is None:
+        raise ValueError("FTS search modes require --query or --pattern")
+    return ResolvedSearch(
+        mode=mode,
+        vector_query=query if mode in VECTOR_MODES else None,
+        fts_query=fts_query if mode in FTS_MODES else None,
+        fts_is_pattern=pattern is not None,
+    )
+
+
+def normalize_search_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+    value = value.strip()
+    return value or None
+
+
 def search(
     con: sqlite3.Connection,
     *,
-    query: str,
+    query: str | None = None,
+    vector_query: str | None = None,
+    fts_query: str | None = None,
+    fts_is_pattern: bool = False,
     mode: SearchMode,
     limit: int,
     candidates: int,
@@ -50,16 +100,32 @@ def search(
 ) -> list[SearchResult]:
     ensure_files_columns(con)
     ensure_chunks_columns(con)
-    if mode in {"vec", "fts-vec", "vec-fts"} and embedder is None:
+    vector_query = vector_query or query
+    fts_query = fts_query or query
+    if mode in VECTOR_MODES and embedder is None:
         raise ValueError("Embedding provider is required for vector search")
+    if mode in VECTOR_MODES and vector_query is None:
+        raise ValueError("Vector search modes require a vector query")
+    if mode in FTS_MODES and fts_query is None:
+        raise ValueError("FTS search modes require an FTS query")
     if mode == "fts":
-        return with_db_path(fts_candidates(con, query, candidates=limit), db_path)
+        assert fts_query is not None
+        return with_db_path(
+            fts_candidates(
+                con,
+                fts_query,
+                candidates=limit,
+                is_pattern=fts_is_pattern,
+            ),
+            db_path,
+        )
     if mode == "vec":
         assert embedder is not None
+        assert vector_query is not None
         return with_db_path(
             vec_candidates(
                 con,
-                query,
+                vector_query,
                 candidates=limit,
                 embedder=embedder,
                 query_vector=query_vector,
@@ -68,11 +134,18 @@ def search(
         )
     if mode == "fts-vec":
         assert embedder is not None
-        rows = fts_candidates(con, query, candidates=candidates)
+        assert vector_query is not None
+        assert fts_query is not None
+        rows = fts_candidates(
+            con,
+            fts_query,
+            candidates=candidates,
+            is_pattern=fts_is_pattern,
+        )
         return with_db_path(
             rerank_by_vector(
                 con,
-                query,
+                vector_query,
                 rows,
                 limit=limit,
                 embedder=embedder,
@@ -82,31 +155,49 @@ def search(
         )
     if mode == "vec-fts":
         assert embedder is not None
+        assert vector_query is not None
+        assert fts_query is not None
         rows = vec_candidates(
             con,
-            query,
+            vector_query,
             candidates=candidates,
             embedder=embedder,
             query_vector=query_vector,
         )
-        return with_db_path(rerank_by_fts(con, query, rows, limit=limit), db_path)
+        return with_db_path(
+            rerank_by_fts(
+                con,
+                fts_query,
+                rows,
+                limit=limit,
+                is_pattern=fts_is_pattern,
+            ),
+            db_path,
+        )
     raise ValueError(f"Unknown mode: {mode}")
 
 
 def search_many(
     db_paths: list[Path],
     *,
-    query: str,
+    query: str | None = None,
+    vector_query: str | None = None,
+    fts_query: str | None = None,
+    fts_is_pattern: bool = False,
     mode: SearchMode,
     limit: int,
     candidates: int,
     embedder: EmbeddingProvider | None,
 ) -> list[SearchResult]:
+    vector_query = vector_query or query
+    fts_query = fts_query or query
     query_vector = None
-    if mode in {"vec", "fts-vec", "vec-fts"}:
+    if mode in VECTOR_MODES:
         if embedder is None:
             raise ValueError("Embedding provider is required for vector search")
-        query_vector = serialize_vector(embedder.embed_query(query))
+        if vector_query is None:
+            raise ValueError("Vector search modes require a vector query")
+        query_vector = serialize_vector(embedder.embed_query(vector_query))
 
     all_results: list[SearchResult] = []
     per_db_candidates = max(candidates, limit)
@@ -116,6 +207,9 @@ def search_many(
                 search(
                     con,
                     query=query,
+                    vector_query=vector_query,
+                    fts_query=fts_query,
+                    fts_is_pattern=fts_is_pattern,
                     mode=mode,
                     limit=per_db_candidates,
                     candidates=per_db_candidates,
@@ -133,8 +227,14 @@ def with_db_path(results: list[SearchResult], db_path: str | None) -> list[Searc
     return [SearchResult(**{**result.__dict__, "db_path": db_path}) for result in results]
 
 
-def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> list[SearchResult]:
-    if use_like_fallback(query):
+def fts_candidates(
+    con: sqlite3.Connection,
+    query: str,
+    *,
+    candidates: int,
+    is_pattern: bool,
+) -> list[SearchResult]:
+    if not is_pattern and use_like_fallback(query):
         return like_candidates(con, query, candidates=candidates)
     rows = con.execute(
         """
@@ -163,7 +263,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
         ORDER BY fts_rank
         LIMIT ?
         """,
-        (escape_fts_query(query), candidates),
+        (fts_match_query(query, is_pattern=is_pattern), candidates),
     ).fetchall()
     return [
         SearchResult(
@@ -366,10 +466,16 @@ def rerank_by_fts(
     rows: list[SearchResult],
     *,
     limit: int,
+    is_pattern: bool,
 ) -> list[SearchResult]:
     if not rows:
         return []
-    ranks = fts_rank_for_ids(con, query, [row.chunk_id for row in rows])
+    ranks = fts_rank_for_ids(
+        con,
+        query,
+        [row.chunk_id for row in rows],
+        is_pattern=is_pattern,
+    )
     reranked = [
         SearchResult(
             **{
@@ -385,9 +491,13 @@ def rerank_by_fts(
 
 
 def fts_rank_for_ids(
-    con: sqlite3.Connection, query: str, chunk_ids: list[int]
+    con: sqlite3.Connection,
+    query: str,
+    chunk_ids: list[int],
+    *,
+    is_pattern: bool,
 ) -> dict[int, float | None]:
-    if use_like_fallback(query):
+    if not is_pattern and use_like_fallback(query):
         pattern = f"%{escape_like(query)}%"
         rows = con.execute(
             f"""
@@ -404,7 +514,7 @@ def fts_rank_for_ids(
         FROM chunks_fts
         WHERE chunks_fts MATCH ? AND rowid IN ({",".join("?" for _ in chunk_ids)})
         """,
-        (escape_fts_query(query), *chunk_ids),
+        (fts_match_query(query, is_pattern=is_pattern), *chunk_ids),
     ).fetchall()
     return {int(row["chunk_id"]): float(row["rank"]) for row in rows}
 
@@ -438,5 +548,11 @@ def escape_like(query: str) -> str:
     return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def escape_fts_query(query: str) -> str:
+def fts_match_query(query: str, *, is_pattern: bool) -> str:
+    if is_pattern:
+        return query
+    return f'"{escape_fts_phrase(query)}"'
+
+
+def escape_fts_phrase(query: str) -> str:
     return query.replace('"', '""')

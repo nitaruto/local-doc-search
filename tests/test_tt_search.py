@@ -47,7 +47,7 @@ from tt_search.indexer import (
     strategy_for_path,
 )
 from tt_search.mcp import McpSearchServer
-from tt_search.search import require_vec_distance, search, search_many
+from tt_search.search import require_vec_distance, resolve_search, search, search_many
 
 runner = CliRunner()
 
@@ -471,6 +471,31 @@ def test_mcp_server_lists_and_calls_search_tool(
     assert '"end_line": 2' in payload
 
 
+def test_mcp_search_tool_accepts_pattern_only(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    server = McpSearchServer([db], device="cpu")
+
+    call = server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "search",
+                "arguments": {"pattern": "SQLite OR 京都旅行", "limit": 5},
+            },
+        }
+    )
+
+    assert call is not None
+    payload = call["result"]["content"][0]["text"]
+    assert '"relative_path": "search.md"' in payload
+    assert '"relative_path": "travel.md"' in payload
+
+
 def test_mcp_server_roots_tool(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
     db = tmp_path / "index.sqlite"
     build_db(db, list(sample_roots), [".md"])
@@ -514,6 +539,36 @@ def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path
     assert results[0].source == "like"
 
 
+def test_fts_pattern_uses_match_syntax(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+
+    with connect(db) as con:
+        pattern_results = search(
+            con,
+            fts_query="SQLite OR 京都旅行",
+            fts_is_pattern=True,
+            mode="fts",
+            limit=10,
+            candidates=10,
+            embedder=None,
+        )
+        literal_results = search(
+            con,
+            query="SQLite OR 京都旅行",
+            mode="fts",
+            limit=10,
+            candidates=10,
+            embedder=None,
+        )
+
+    assert {Path(result.path).name for result in pattern_results} == {
+        "search.md",
+        "travel.md",
+    }
+    assert literal_results == []
+
+
 def test_hybrid_modes_return_results(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
     db = tmp_path / "index.sqlite"
     build_db(db, list(sample_roots))
@@ -521,7 +576,9 @@ def test_hybrid_modes_return_results(tmp_path: Path, sample_roots: tuple[Path, P
     with connect(db) as con:
         fts_vec = search(
             con,
-            query="検索 sqlite",
+            vector_query="検索 sqlite",
+            fts_query="検索 OR sqlite",
+            fts_is_pattern=True,
             mode="fts-vec",
             limit=3,
             candidates=10,
@@ -529,7 +586,9 @@ def test_hybrid_modes_return_results(tmp_path: Path, sample_roots: tuple[Path, P
         )
         vec_fts = search(
             con,
-            query="検索 sqlite",
+            vector_query="検索 sqlite",
+            fts_query="検索 OR sqlite",
+            fts_is_pattern=True,
             mode="vec-fts",
             limit=3,
             candidates=10,
@@ -540,6 +599,25 @@ def test_hybrid_modes_return_results(tmp_path: Path, sample_roots: tuple[Path, P
     assert vec_fts
     assert fts_vec[0].source == "fts-vec"
     assert vec_fts[0].source == "vec-fts"
+
+
+def test_resolve_search_defaults_by_query_and_pattern() -> None:
+    assert resolve_search(query="semantic", pattern=None, mode=None).mode == "vec"
+    assert resolve_search(query=None, pattern="foo OR bar", mode=None).mode == "fts"
+    resolved = resolve_search(query="semantic", pattern="foo OR bar", mode=None)
+    assert resolved.mode == "vec-fts"
+    assert resolved.vector_query == "semantic"
+    assert resolved.fts_query == "foo OR bar"
+    assert resolved.fts_is_pattern is True
+
+
+def test_search_command_pattern_only_defaults_to_fts(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+
+    cli.search_cmd(db=[db], pattern="SQLite OR 京都旅行", limit=3, no_server=True)
 
 
 def test_reindex_updates_changed_file(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

@@ -23,8 +23,9 @@ Markdown fenced code blocks are skipped when building chunks.
 
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --ext .md --ext .txt
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode fts-vec
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec-fts --explain
+uv run tt-search search --db notes.sqlite --query "検索したい内容"
+uv run tt-search search --db notes.sqlite --pattern "検索 OR sqlite"
+uv run tt-search search --db notes.sqlite --query "検索したい内容" --pattern "sqlite OR fts" --mode vec-fts --explain
 uv run tt-search info --db notes.sqlite
 uv run tt-search files --db notes.sqlite
 uv run tt-search files --db notes.sqlite --json
@@ -48,6 +49,10 @@ on both CPU and MPS and therefore requires retry handling. The PLaMo backend loa
 as `bfloat16` and stores sqlite-vec embeddings as `float32`.
 Search output includes both the absolute `path` and the indexed root-relative `relative_path`.
 Search output also includes chunk line ranges so other agents can locate the hit text.
+`--query` is the semantic/vector query. `--pattern` is passed to SQLite FTS5 `MATCH` and can
+use FTS5 operators such as `AND`, `OR`, `NOT`, and `NEAR`. If `--mode` is omitted, query-only
+search defaults to `vec`, pattern-only search defaults to `fts`, and query+pattern defaults
+to `vec-fts`.
 `tt-search files` lists the files currently stored in the SQLite index, including `path`,
 `root_path`, `relative_path`, `size`, `mtime_ns`, and `content_hash`.
 Without `--json`, it prints one indexed file per line as `key=value` fields.
@@ -80,6 +85,7 @@ turns are split before embedding to keep sequence length bounded.
 uv run tt-search codex-index --rebuild
 uv run tt-search codex-server --device auto
 uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
+uv run tt-search codex-search --pattern "実装 OR エラー"
 uv run tt-search codex-search --query "以前相談した内容" --json
 ```
 

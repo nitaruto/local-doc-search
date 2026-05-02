@@ -15,7 +15,7 @@ from .db import (
     validate_embedding_compatible,
 )
 from .embeddings import DeviceOption, EmbeddingProvider, create_embedding_provider
-from .search import SearchMode, SearchResult, search_many
+from .search import SearchMode, SearchResult, resolve_search, search_many
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
 SEARCH_MODES = {"fts", "vec", "fts-vec", "vec-fts"}
@@ -96,16 +96,20 @@ class McpSearchServer:
         }
 
     def search(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
-        query = str(arguments["query"])
-        mode = parse_mode(arguments.get("mode", "fts-vec"))
+        query = optional_argument_str(arguments, "query")
+        pattern = optional_argument_str(arguments, "pattern")
+        mode = parse_optional_mode(arguments.get("mode"))
+        resolved = resolve_search(query=query, pattern=pattern, mode=mode)
         limit = int(arguments.get("limit", 10))
         candidates = max(int(arguments.get("candidates", 50)), limit)
         explain = bool(arguments.get("explain", False))
-        embedder = self.embedder_for(mode)
+        embedder = self.embedder_for(resolved.mode)
         rows = search_many(
             self.db_paths,
-            query=query,
-            mode=mode,
+            vector_query=resolved.vector_query,
+            fts_query=resolved.fts_query,
+            fts_is_pattern=resolved.fts_is_pattern,
+            mode=resolved.mode,
             limit=limit,
             candidates=candidates,
             embedder=embedder,
@@ -151,12 +155,24 @@ def search_tool_definition() -> dict[str, Any]:
         "inputSchema": {
             "type": "object",
             "properties": {
-                "query": {"type": "string", "description": "Search query."},
+                "query": {
+                    "type": "string",
+                    "description": "Semantic/vector search query.",
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": (
+                        "FTS5 MATCH pattern. Supports FTS5 operators such as "
+                        "AND, OR, NOT, and NEAR."
+                    ),
+                },
                 "mode": {
                     "type": "string",
                     "enum": sorted(SEARCH_MODES),
-                    "default": "fts-vec",
-                    "description": "Search mode.",
+                    "description": (
+                        "Search mode. Defaults to vec for query, fts for pattern, "
+                        "and vec-fts for both."
+                    ),
                 },
                 "limit": {
                     "type": "integer",
@@ -176,7 +192,7 @@ def search_tool_definition() -> dict[str, Any]:
                     "description": "Include component scores.",
                 },
             },
-            "required": ["query"],
+            "anyOf": [{"required": ["query"]}, {"required": ["pattern"]}],
             "additionalProperties": False,
         },
     }
@@ -201,6 +217,19 @@ def parse_mode(value: object) -> SearchMode:
     if mode not in SEARCH_MODES:
         raise ValueError(f"Unknown mode: {mode}")
     return mode  # type: ignore[return-value]
+
+
+def parse_optional_mode(value: object) -> SearchMode | None:
+    if value is None:
+        return None
+    return parse_mode(value)
+
+
+def optional_argument_str(arguments: dict[str, Any], key: str) -> str | None:
+    value = arguments.get(key)
+    if value is None:
+        return None
+    return str(value)
 
 
 def result_to_mcp_dict(result: SearchResult, *, explain: bool) -> dict[str, Any]:

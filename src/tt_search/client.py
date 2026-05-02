@@ -84,7 +84,10 @@ def server_health(registry: dict[str, Any]) -> bool:
 def search_via_server(
     registry: dict[str, Any],
     *,
-    query: str,
+    query: str | None = None,
+    vector_query: str | None = None,
+    fts_query: str | None = None,
+    fts_is_pattern: bool = False,
     mode: SearchMode,
     limit: int,
     candidates: int,
@@ -93,6 +96,9 @@ def search_via_server(
     body = json.dumps(
         {
             "query": query,
+            "vector_query": vector_query,
+            "fts_query": fts_query,
+            "fts_is_pattern": fts_is_pattern,
             "mode": mode,
             "limit": limit,
             "candidates": candidates,

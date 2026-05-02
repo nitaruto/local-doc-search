@@ -38,7 +38,7 @@ from .embeddings import (
 )
 from .indexer import index_paths
 from .mcp import run_mcp_server
-from .search import SearchMode, search_many
+from .search import SearchMode, resolve_search, search_many
 from .server import run_server
 
 app = typer.Typer(help="Local Japanese text search with SQLite FTS5 trigram and sqlite-vec.")
@@ -184,10 +184,16 @@ def search_cmd(
         list[Path],
         typer.Option("--db", help="SQLite DB path. Can be specified multiple times."),
     ],
-    query: Annotated[str, typer.Option("--query", "-q", help="Search query.")],
+    query: Annotated[
+        str | None, typer.Option("--query", "-q", help="Semantic/vector search query.")
+    ] = None,
+    pattern: Annotated[
+        str | None, typer.Option("--pattern", help="FTS5 MATCH pattern.")
+    ] = None,
     mode: Annotated[
-        SearchMode, typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts.")
-    ] = "fts-vec",
+        SearchMode | None,
+        typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts."),
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="Number of results.")] = 10,
     candidates: Annotated[
         int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
@@ -207,6 +213,7 @@ def search_cmd(
     db_paths = normalize_db_paths(db)
     if not db_paths:
         raise typer.BadParameter("At least one --db is required")
+    resolved = resolve_cli_search(query=query, pattern=pattern, mode=mode)
 
     if not no_server:
         registry = find_live_server(db_paths)
@@ -214,8 +221,10 @@ def search_cmd(
             try:
                 rows = search_via_server(
                     registry,
-                    query=query,
-                    mode=mode,
+                    vector_query=resolved.vector_query,
+                    fts_query=resolved.fts_query,
+                    fts_is_pattern=resolved.fts_is_pattern,
+                    mode=resolved.mode,
                     limit=limit,
                     candidates=max(candidates, limit),
                 )
@@ -224,11 +233,13 @@ def search_cmd(
             except ServerSearchError as exc:
                 console.print(f"[yellow]Warning: {exc}. Falling back to local search.[/yellow]")
 
-    embedder = build_search_embedder(db_paths, mode=mode, device=device)
+    embedder = build_search_embedder(db_paths, mode=resolved.mode, device=device)
     rows = search_many(
         db_paths,
-        query=query,
-        mode=mode,
+        vector_query=resolved.vector_query,
+        fts_query=resolved.fts_query,
+        fts_is_pattern=resolved.fts_is_pattern,
+        mode=resolved.mode,
         limit=limit,
         candidates=max(candidates, limit),
         embedder=embedder,
@@ -301,10 +312,16 @@ def codex_index_cmd(
 
 @app.command(name="codex-search")
 def codex_search_cmd(
-    query: Annotated[str, typer.Option("--query", "-q", help="Search query.")],
+    query: Annotated[
+        str | None, typer.Option("--query", "-q", help="Semantic/vector search query.")
+    ] = None,
+    pattern: Annotated[
+        str | None, typer.Option("--pattern", help="FTS5 MATCH pattern.")
+    ] = None,
     mode: Annotated[
-        SearchMode, typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts.")
-    ] = "fts-vec",
+        SearchMode | None,
+        typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts."),
+    ] = None,
     limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="Number of results.")] = 10,
     candidates: Annotated[
         int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
@@ -316,14 +333,38 @@ def codex_search_cmd(
     json_output: Annotated[
         bool, typer.Option("--json", help="Print JSON instead of a table.")
     ] = False,
+    no_server: Annotated[
+        bool, typer.Option("--no-server", help="Do not use a running tt-search server.")
+    ] = False,
 ) -> None:
     """Search the fixed Codex history search database."""
     validate_codex_history_db(CODEX_HISTORY_DB)
-    embedder = build_search_embedder([CODEX_HISTORY_DB], mode=mode, device=device)
+    resolved = resolve_cli_search(query=query, pattern=pattern, mode=mode)
+    if not no_server:
+        registry = find_live_server([CODEX_HISTORY_DB])
+        if registry is not None and server_device_matches(registry, device):
+            try:
+                rows = search_via_server(
+                    registry,
+                    vector_query=resolved.vector_query,
+                    fts_query=resolved.fts_query,
+                    fts_is_pattern=resolved.fts_is_pattern,
+                    mode=resolved.mode,
+                    limit=limit,
+                    candidates=max(candidates, limit),
+                )
+                output_results(rows, json_output=json_output, explain=explain)
+                return
+            except ServerSearchError as exc:
+                console.print(f"[yellow]Warning: {exc}. Falling back to local search.[/yellow]")
+
+    embedder = build_search_embedder([CODEX_HISTORY_DB], mode=resolved.mode, device=device)
     rows = search_many(
         [CODEX_HISTORY_DB],
-        query=query,
-        mode=mode,
+        vector_query=resolved.vector_query,
+        fts_query=resolved.fts_query,
+        fts_is_pattern=resolved.fts_is_pattern,
+        mode=resolved.mode,
         limit=limit,
         candidates=max(candidates, limit),
         embedder=embedder,
@@ -396,6 +437,18 @@ def build_search_embedder(
             "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
         )
     return create_embedding_provider(model_name=model, device=device)
+
+
+def resolve_cli_search(
+    *,
+    query: str | None,
+    pattern: str | None,
+    mode: SearchMode | None,
+):
+    try:
+        return resolve_search(query=query, pattern=pattern, mode=mode)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
 
 def server_device_matches(registry: dict[str, object], device: DeviceOption) -> bool:
