@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import typer
@@ -53,6 +54,7 @@ from local_doc_search.mcp import (
     search_tool_definition,
 )
 from local_doc_search.search import require_vec_distance, resolve_search, search, search_many
+from local_doc_search.server import SearchRequestHandler
 
 runner = CliRunner()
 
@@ -440,6 +442,32 @@ def test_search_command_falls_back_when_server_errors(
     monkeypatch.setattr(cli, "search_via_server", failing_server)
 
     cli.search_cmd(db=[db], query="日本語", mode="fts", limit=3)
+
+
+def test_server_search_accepts_vector_query_payload(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    handler = object.__new__(SearchRequestHandler)
+    state = SimpleNamespace(
+        db_paths=[db],
+        embedder=FakeEmbedder(),
+        assert_fresh=lambda: None,
+    )
+    handler.server = SimpleNamespace(state=state)
+
+    results = handler.handle_search(
+        {
+            "vector_query": "削除された標準ファンクション",
+            "mode": "vec",
+            "limit": 1,
+            "candidates": 5,
+        }
+    )
+
+    assert len(results) == 1
+    assert results[0].source == "vec"
 
 
 def test_mcp_server_lists_and_calls_search_tool(

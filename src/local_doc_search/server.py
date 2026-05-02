@@ -57,11 +57,6 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
         mode = payload.get("mode", "fts-vec")
         if mode not in {"fts", "vec", "fts-vec", "vec-fts"}:
             raise ValueError(f"Unknown mode: {mode}")
-        resolved = resolve_search(
-            query=optional_payload_str(payload, "query"),
-            pattern=None,
-            mode=mode,
-        )
         if payload.get("vector_query") is not None or payload.get("fts_query") is not None:
             resolved = resolve_search(
                 query=optional_payload_str(payload, "vector_query"),
@@ -79,6 +74,12 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
                     pattern=None,
                     mode=mode,
                 )
+        else:
+            resolved = resolve_search(
+                query=optional_payload_str(payload, "query"),
+                pattern=None,
+                mode=mode,
+            )
         embedder = None if resolved.mode == "fts" else self.server.state.embedder
         return search_many(
             self.server.state.db_paths,
