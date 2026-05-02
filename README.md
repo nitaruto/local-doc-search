@@ -39,7 +39,8 @@ Search uses the embedding model stored in the SQLite DB at index time.
 For Japanese-focused quality, `cl-nagoya/ruri-v3-*` is the preferred experimental upgrade path.
 `pfnet/plamo-embedding-1b` is supported for experiments, but it is not recommended for normal
 use because its custom `encode_document` / `encode_query` path can return non-finite vectors
-on both CPU and MPS and therefore requires retry handling.
+on both CPU and MPS and therefore requires retry handling. The PLaMo backend loads the model
+as `bfloat16` and stores sqlite-vec embeddings as `float32`.
 Search output includes both the absolute `path` and the indexed root-relative `relative_path`.
 Search output also includes chunk line ranges so other agents can locate the hit text.
 `tt-search files` lists the files currently stored in the SQLite index, including `path`,

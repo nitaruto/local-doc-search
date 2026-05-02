@@ -142,7 +142,7 @@ search時:
 - `plamo-custom`
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
-  - document embeddingの非有限値を避けるため、modelは明示的に `float32` でloadする。
+  - model configの `torch_dtype=bfloat16` に合わせ、modelは明示的に `bfloat16` でloadする。sqlite-vecへ保存するembeddingは既存通り `float32` へ変換する。
   - PLaMo custom codeのRotaryEmbedding cacheがload後に確率的に壊れることがあるため、device移動後、dimension probe前に全layerのrotary cacheを再生成する。
   - `--device auto` は他backendと同じく、PyTorch MPSが利用可能なら `mps`、不可なら `cpu` を使う。
   - PLaMoの `encode_document` / `encode_query` はCPUでも確率的に非有限値を返すことがあるため、非有限値の場合のみwarningを出して最大5回retryする。全試行失敗した場合はエラーにし、不正vectorは保存しない。

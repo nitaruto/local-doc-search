@@ -591,6 +591,7 @@ def test_model_prefix_policy() -> None:
 
 def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     import numpy as np
+    import torch
     from transformers import AutoModel, AutoTokenizer
 
     calls: list[tuple[str, object]] = []
@@ -625,11 +626,14 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
         "from_pretrained",
         lambda model_name, trust_remote_code: FakeTokenizer(),
     )
-    monkeypatch.setattr(
-        AutoModel,
-        "from_pretrained",
-        lambda model_name, trust_remote_code, dtype: FakePlamoModel(),
-    )
+
+    def fake_from_pretrained(
+        model_name: str, *, trust_remote_code: bool, dtype: torch.dtype
+    ) -> FakePlamoModel:
+        calls.append(("dtype", dtype))
+        return FakePlamoModel()
+
+    monkeypatch.setattr(AutoModel, "from_pretrained", fake_from_pretrained)
 
     provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
 
@@ -638,6 +642,7 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert provider.prefix_policy == "plamo"
     assert provider.dim == 3
     assert provider._model.config.max_length == 1234
+    assert ("dtype", torch.bfloat16) in calls
     passage_vectors = provider.embed_passages(["a", "b"])
     assert passage_vectors[0] == pytest.approx([0.6, 0.8, 0.0])
     assert passage_vectors[1] == pytest.approx([0.6, 0.8, 0.0])
@@ -804,6 +809,30 @@ def test_tensor_to_vectors_accepts_bfloat16_tensor() -> None:
 
     vectors = tensor_to_vectors(torch.tensor([[3.0, 4.0, 0.0]], dtype=torch.bfloat16))
 
+    assert vectors[0] == pytest.approx([0.6, 0.8, 0.0])
+
+
+def test_tensor_to_vectors_moves_to_cpu_before_float_cast() -> None:
+    import numpy as np
+
+    calls: list[str] = []
+
+    class FakeTensor:
+        def detach(self) -> FakeTensor:
+            calls.append("detach")
+            return self
+
+        def cpu(self) -> FakeTensor:
+            calls.append("cpu")
+            return self
+
+        def float(self) -> np.ndarray:
+            calls.append("float")
+            return np.array([[3.0, 4.0, 0.0]], dtype=np.float32)
+
+    vectors = tensor_to_vectors(FakeTensor())
+
+    assert calls == ["detach", "cpu", "float"]
     assert vectors[0] == pytest.approx([0.6, 0.8, 0.0])
 
 

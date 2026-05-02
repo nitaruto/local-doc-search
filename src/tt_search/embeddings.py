@@ -96,7 +96,7 @@ class PlamoEmbeddingProvider:
         self._model = AutoModel.from_pretrained(
             self.model_name,
             trust_remote_code=True,
-            dtype=torch.float32,
+            dtype=torch.bfloat16,
         )
         ensure_plamo_max_length(self._model)
         self._model = self._model.to(self.device)
@@ -165,7 +165,7 @@ def create_embedding_provider(
 
 def tensor_to_vectors(value: object) -> list[list[float]]:
     if hasattr(value, "detach"):
-        value = value.detach().float().cpu()
+        value = value.detach().cpu().float()
     arr = np.asarray(value, dtype=np.float32)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
