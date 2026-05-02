@@ -9,6 +9,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+import local_doc_search.client as client_module
 import local_doc_search.mcp as mcp_module
 from local_doc_search import cli
 from local_doc_search.codex_history import (
@@ -442,6 +443,76 @@ def test_search_command_falls_back_when_server_errors(
     monkeypatch.setattr(cli, "search_via_server", failing_server)
 
     cli.search_cmd(db=[db], query="日本語", mode="fts", limit=3)
+
+
+def test_search_command_without_db_uses_single_live_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(cli, "find_live_servers", lambda: [{"device": "cpu", "port": 12345}])
+
+    def recording_server(registry: dict[str, object], **kwargs: object) -> list[object]:
+        calls.append({"registry": registry, **kwargs})
+        return []
+
+    monkeypatch.setattr(cli, "search_via_server", recording_server)
+
+    cli.search_cmd(db=None, query="削除された標準ファンクション", mode="vec", json_output=True)
+
+    assert calls == [
+        {
+            "registry": {"device": "cpu", "port": 12345},
+            "vector_query": "削除された標準ファンクション",
+            "fts_query": None,
+            "fts_is_pattern": False,
+            "mode": "vec",
+            "limit": 10,
+            "candidates": 50,
+        }
+    ]
+
+
+def test_search_command_without_db_rejects_multiple_live_servers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cli,
+        "find_live_servers",
+        lambda: [{"device": "cpu", "port": 1111}, {"device": "cpu", "port": 2222}],
+    )
+
+    with pytest.raises(typer.BadParameter, match="Multiple live"):
+        cli.search_cmd(db=None, query="検索", mode="vec")
+
+
+def test_search_command_without_db_rejects_no_server(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(cli, "find_live_servers", lambda: [])
+
+    with pytest.raises(typer.BadParameter, match="No live"):
+        cli.search_cmd(db=None, query="検索", mode="vec")
+
+
+def test_find_live_server_retries_health(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    fingerprints = fingerprint_many([db])
+    monkeypatch.setattr(
+        client_module,
+        "read_registry",
+        lambda _: {"fingerprints": [fingerprint.__dict__ for fingerprint in fingerprints]},
+    )
+    monkeypatch.setattr(client_module.time, "sleep", lambda _: None)
+    checks = iter([False, False, True])
+    monkeypatch.setattr(client_module, "server_health", lambda _: next(checks))
+
+    assert client_module.find_live_server([db]) is not None
 
 
 def test_server_search_accepts_vector_query_payload(

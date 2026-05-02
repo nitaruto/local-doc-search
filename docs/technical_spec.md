@@ -335,11 +335,16 @@ uv run local-doc-search codex-server --device auto
 ```
 
 `local-doc-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
+server registryが存在しfingerprintも一致する場合は、起動直後のraceを避けるため短時間 `/health` をretryする。
 serverがない、応答しない、DB fingerprintが一致しない場合はdirect検索へfallbackする。
+`--db` なしの場合は、liveなserverが1件だけならそのserverへ問い合わせる。
+liveなserverが0件または複数件の場合は、曖昧または検索不能としてエラーにする。
+`--db` なしではdirect検索へfallbackしない。
 
 ```bash
 uv run local-doc-search search --db notes.sqlite --db work.sqlite --query "検索語" --mode fts-vec
 uv run local-doc-search search --db notes.sqlite --query "検索語" --mode vec --no-server
+uv run local-doc-search search --query "検索語" --mode vec
 ```
 
 server discovery:

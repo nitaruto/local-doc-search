@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -11,6 +12,8 @@ from .db import DbFingerprint, fingerprint_many, fingerprints_match, normalize_d
 from .search import SearchMode, SearchResult
 
 REGISTRY_DIR = Path.home() / ".cache" / "local-doc-search" / "servers"
+HEALTH_RETRY_SECONDS = 3.0
+HEALTH_RETRY_INTERVAL_SECONDS = 0.1
 
 
 class ServerSearchError(RuntimeError):
@@ -67,9 +70,56 @@ def find_live_server(db_paths: list[Path]) -> dict[str, Any] | None:
         return None
     if not fingerprints_match(current, registry.get("fingerprints", [])):
         return None
-    if not server_health(registry):
+    if not wait_for_server_health(registry):
         return None
     return registry
+
+
+def find_live_servers() -> list[dict[str, Any]]:
+    registries: list[dict[str, Any]] = []
+    for registry in read_all_registries():
+        db_paths = registry_db_paths(registry)
+        if not db_paths:
+            continue
+        try:
+            current = fingerprint_many(db_paths)
+        except OSError:
+            continue
+        if not fingerprints_match(current, registry.get("fingerprints", [])):
+            continue
+        if not wait_for_server_health(registry):
+            continue
+        registries.append(registry)
+    return registries
+
+
+def read_all_registries() -> list[dict[str, Any]]:
+    if not REGISTRY_DIR.exists():
+        return []
+    registries: list[dict[str, Any]] = []
+    for path in sorted(REGISTRY_DIR.glob("*.json")):
+        try:
+            registries.append(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError):
+            continue
+    return registries
+
+
+def registry_db_paths(registry: dict[str, Any]) -> list[Path]:
+    db_paths = registry.get("db_paths")
+    if not isinstance(db_paths, list):
+        return []
+    return [Path(str(db_path)) for db_path in db_paths]
+
+
+def wait_for_server_health(registry: dict[str, Any]) -> bool:
+    deadline = time.monotonic() + HEALTH_RETRY_SECONDS
+    while True:
+        if server_health(registry):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(HEALTH_RETRY_INTERVAL_SECONDS)
 
 
 def server_health(registry: dict[str, Any]) -> bool:

@@ -95,7 +95,11 @@ Run a local server to avoid loading the embedding model for every query.
 ```bash
 uv run local-doc-search server --db notes.sqlite --device auto
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec
+uv run local-doc-search search --query "検索したい内容" --mode vec
 ```
+
+When `--db` is omitted, `search` uses the single live local server if exactly one
+is registered.
 
 Run a stdio MCP server for coding agents such as Codex.
 

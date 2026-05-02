@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .client import ServerSearchError, find_live_server, search_via_server
+from .client import ServerSearchError, find_live_server, find_live_servers, search_via_server
 from .codex_history import (
     CODEX_HISTORY_DB,
     CODEX_HISTORY_INDEX_KIND,
@@ -182,9 +182,9 @@ class RichIndexProgress:
 
 def search_cmd(
     db: Annotated[
-        list[Path],
+        list[Path] | None,
         typer.Option("--db", help="SQLite DB path. Can be specified multiple times."),
-    ],
+    ] = None,
     query: Annotated[
         str | None, typer.Option("--query", "-q", help="Semantic/vector search query.")
     ] = None,
@@ -211,10 +211,29 @@ def search_cmd(
     ] = False,
 ) -> None:
     """Search indexed files."""
-    db_paths = normalize_db_paths(db)
-    if not db_paths:
-        raise typer.BadParameter("At least one --db is required")
+    db_paths = normalize_db_paths(db or [])
     resolved = resolve_cli_search(query=query, pattern=pattern, mode=mode)
+    if not db_paths:
+        if no_server:
+            raise typer.BadParameter("--db is required when --no-server is used")
+        registries = find_live_servers()
+        if not registries:
+            raise typer.BadParameter("No live local-doc-search server found. Specify --db.")
+        if len(registries) > 1:
+            raise typer.BadParameter(
+                "Multiple live local-doc-search servers found. Specify --db."
+            )
+        rows = search_via_server(
+            registries[0],
+            vector_query=resolved.vector_query,
+            fts_query=resolved.fts_query,
+            fts_is_pattern=resolved.fts_is_pattern,
+            mode=resolved.mode,
+            limit=limit,
+            candidates=max(candidates, limit),
+        )
+        output_results(rows, json_output=json_output, explain=explain)
+        return
 
     if not no_server:
         registry = find_live_server(db_paths)
