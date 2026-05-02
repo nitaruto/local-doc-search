@@ -26,6 +26,7 @@ from tt_search.embeddings import (
     prefix_passage,
     prefix_policy_for_model,
     prefix_query,
+    refresh_plamo_rotary_cache,
     resolve_device,
     tensor_to_vectors,
 )
@@ -763,6 +764,37 @@ def test_ensure_plamo_max_length_preserves_existing_value() -> None:
     ensure_plamo_max_length(FakeModel())
 
     assert FakeModel.config.max_length == 2048
+
+
+def test_refresh_plamo_rotary_cache() -> None:
+    calls: list[tuple[int, str, str]] = []
+
+    class FakeInvFreq:
+        device = "cpu"
+        dtype = "float32"
+
+    class FakeRotaryEmbedding:
+        max_position_embeddings = 4096
+        inv_freq = FakeInvFreq()
+
+        def _set_cos_sin_cache(self, *, seq_len: int, device: str, dtype: str) -> None:
+            calls.append((seq_len, device, dtype))
+
+    class FakeAttention:
+        rotary_emb = FakeRotaryEmbedding()
+
+    class FakeLayer:
+        self_attn = FakeAttention()
+
+    class FakeLayers:
+        layers = [FakeLayer(), FakeLayer()]
+
+    class FakeModel:
+        layers = FakeLayers()
+
+    refresh_plamo_rotary_cache(FakeModel())
+
+    assert calls == [(4096, "cpu", "float32"), (4096, "cpu", "float32")]
 
 
 def test_tensor_to_vectors_accepts_bfloat16_tensor() -> None:

@@ -99,6 +99,7 @@ class PlamoEmbeddingProvider:
         )
         ensure_plamo_max_length(self._model)
         self._model = self._model.to(self.device)
+        refresh_plamo_rotary_cache(self._model)
         self._model.eval()
         sample = self._encode_documents(["dimension probe"])
         self.dim = len(sample[0])
@@ -172,6 +173,21 @@ def ensure_plamo_max_length(model: object) -> None:
         return
     max_length = getattr(config, "max_position_embeddings", 4096)
     config.max_length = int(max_length)
+
+
+def refresh_plamo_rotary_cache(model: object) -> None:
+    layers = getattr(getattr(model, "layers", None), "layers", [])
+    for layer in layers:
+        rotary_emb = getattr(getattr(layer, "self_attn", None), "rotary_emb", None)
+        if rotary_emb is None or not hasattr(rotary_emb, "_set_cos_sin_cache"):
+            continue
+        seq_len = int(rotary_emb.max_position_embeddings)
+        inv_freq = rotary_emb.inv_freq
+        rotary_emb._set_cos_sin_cache(
+            seq_len=seq_len,
+            device=inv_freq.device,
+            dtype=inv_freq.dtype,
+        )
 
 
 def resolve_device(device: DeviceOption) -> str:
