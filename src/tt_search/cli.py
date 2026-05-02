@@ -331,6 +331,19 @@ def codex_search_cmd(
     output_results(rows, json_output=json_output, explain=explain)
 
 
+@app.command(name="codex-server")
+def codex_server_cmd(
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    host: Annotated[str, typer.Option("--host", help="Bind host.")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", min=0, help="Bind port. Use 0 for auto.")] = 0,
+) -> None:
+    """Run a local search server for the fixed Codex history database."""
+    validate_codex_history_db(CODEX_HISTORY_DB)
+    run_server([CODEX_HISTORY_DB], host=host, port=port, device=device)
+
+
 @app.command()
 def server(
     db: Annotated[

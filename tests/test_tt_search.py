@@ -757,6 +757,39 @@ def test_codex_search_command_rejects_missing_db(
         cli.codex_search_cmd(query="codex", mode="fts")
 
 
+def test_codex_server_command_uses_fixed_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+    with connect(db) as con:
+        index_codex_sessions(con, roots=[root], embedder=FakeEmbedder(), rebuild=True)
+    calls: list[tuple[list[Path], str, int, str]] = []
+
+    def recording_server(
+        db_paths: list[Path], *, host: str, port: int, device: cli.DeviceOption
+    ) -> None:
+        calls.append((db_paths, host, port, device))
+
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", db)
+    monkeypatch.setattr(cli, "run_server", recording_server)
+
+    cli.codex_server_cmd(device="cpu", host="127.0.0.2", port=12345)
+
+    assert calls == [([db], "127.0.0.2", 12345, "cpu")]
+
+
+def test_codex_server_command_rejects_missing_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", tmp_path / "missing.sqlite")
+
+    with pytest.raises(typer.BadParameter, match="codex-index"):
+        cli.codex_server_cmd()
+
+
 def test_codex_search_help_has_no_model_option() -> None:
     result = runner.invoke(cli.app, ["codex-search", "--help"])
 

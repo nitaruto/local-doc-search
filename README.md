@@ -77,6 +77,7 @@ turns are split before embedding to keep sequence length bounded.
 
 ```bash
 uv run tt-search codex-index --rebuild
+uv run tt-search codex-server --device auto
 uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
 uv run tt-search codex-search --query "以前相談した内容" --json
 ```
