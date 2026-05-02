@@ -3,17 +3,19 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from .db import ensure_schema, set_embedding_metadata, set_metadata
 from .embeddings import EmbeddingProvider
 from .indexer import (
+    MAX_CHARS,
     Chunk,
     IndexedFile,
     IndexProgress,
     IndexStats,
+    chunk_text,
     clear_index,
     is_unchanged,
     remove_missing_files,
@@ -24,6 +26,7 @@ CODEX_HISTORY_INDEX_KIND = "codex-history"
 CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 CODEX_HISTORY_DB = Path.home() / ".codex" / "tt-search" / "codex-history.sqlite"
 CODEX_HISTORY_MODEL = "cl-nagoya/ruri-v3-310m"
+CODEX_TURN_MAX_CHARS = MAX_CHARS
 
 
 @dataclass(frozen=True)
@@ -172,24 +175,10 @@ def codex_indexed_file(path: Path, roots: list[Path]) -> tuple[IndexedFile | Non
     root_path = matching_root(path, roots)
     relative_path = path.relative_to(root_path) if root_path is not None else Path(path.name)
     stat = path.stat()
-    chunks = [
-        Chunk(
-            index=index,
-            start_offset=0,
-            end_offset=len(turn.text),
-            start_line=1,
-            end_line=max(1, turn.text.count("\n") + 1),
-            text=turn.text,
-            session_id=turn.session_id,
-            cwd=turn.cwd,
-            role=turn.role,
-            turn_id=turn.turn_id,
-            timestamp=turn.timestamp,
-            session_path=str(turn.session_path),
-            line_no=turn.line_no,
-        )
-        for index, turn in enumerate(turns)
-    ]
+    chunks: list[Chunk] = []
+    for turn in turns:
+        for chunk in chunk_codex_turn(turn):
+            chunks.append(replace(chunk, index=len(chunks)))
     return (
         IndexedFile(
             path=path,
@@ -202,6 +191,42 @@ def codex_indexed_file(path: Path, roots: list[Path]) -> tuple[IndexedFile | Non
         ),
         chunks,
     )
+
+
+def chunk_codex_turn(
+    turn: CodexTurn, *, max_chars: int = CODEX_TURN_MAX_CHARS
+) -> list[Chunk]:
+    if len(turn.text) <= max_chars:
+        source_chunks = [
+            Chunk(
+                index=0,
+                start_offset=0,
+                end_offset=len(turn.text),
+                start_line=1,
+                end_line=max(1, turn.text.count("\n") + 1),
+                text=turn.text,
+            )
+        ]
+    else:
+        source_chunks = chunk_text(turn.text, max_chars=max_chars)
+    return [
+        Chunk(
+            index=source.index,
+            start_offset=source.start_offset,
+            end_offset=source.end_offset,
+            start_line=source.start_line,
+            end_line=source.end_line,
+            text=source.text,
+            session_id=turn.session_id,
+            cwd=turn.cwd,
+            role=turn.role,
+            turn_id=turn.turn_id,
+            timestamp=turn.timestamp,
+            session_path=str(turn.session_path),
+            line_no=turn.line_no,
+        )
+        for source in source_chunks
+    ]
 
 
 def matching_root(path: Path, roots: list[Path]) -> Path | None:

@@ -201,7 +201,11 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 - `response_item.payload.type == "message"` のうち、`role=user` の実指示をindexする。
 - `role=assistant` は `phase=final_answer` のみindexする。
 - `phase=commentary` の途中経過、developer message、tool call/output、reasoning、subagent/guardian session、AGENTS/env初期contextはindexしない。
-- chunkは1turn=1chunk。
+- chunkは原則1turn=1chunk。
+- ただしturn textが長すぎる場合は、通常indexと同じ `MAX_CHARS=600` の段落packingで複数chunkへ分割する。
+  - これにより長大な貼り付けや回答がMPS embedding時に過大なsequence lengthになることを避ける。
+  - 分割後chunkにも同じ `session_id`, `cwd`, `role`, `turn_id`, `timestamp`, `session_path`, `line_no` を付与する。
+  - `start_offset`, `end_offset`, `start_line`, `end_line` は元turn text内の位置を表す。
 
 `tt-search codex-search` は固定DBを検索する。
 

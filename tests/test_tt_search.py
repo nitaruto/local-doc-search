@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from tt_search import cli
 from tt_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
+    codex_indexed_file,
     index_codex_sessions,
     parse_codex_session_file,
 )
@@ -603,6 +604,26 @@ def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
     assert {result.cwd for result in results} == {"/work/project"}
     assert {Path(result.session_path or "").name for result in results} == {"rollout-test.jsonl"}
     assert {result.line_no for result in results} == {4, 6}
+
+
+def test_codex_indexed_file_splits_long_turns(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    session = root / "rollout-long.jsonl"
+    rows = codex_session_rows()
+    rows[3]["payload"]["content"][0]["text"] = "あ" * 800  # type: ignore[index]
+    write_jsonl(session, rows)
+
+    indexed, chunks = codex_indexed_file(session, [root])
+
+    assert indexed is not None
+    user_chunks = [chunk for chunk in chunks if chunk.role == "user"]
+    assert len(user_chunks) == 2
+    assert [chunk.line_no for chunk in user_chunks] == [4, 4]
+    assert [(chunk.start_offset, chunk.end_offset) for chunk in user_chunks] == [
+        (0, 600),
+        (480, 800),
+    ]
+    assert {chunk.session_id for chunk in user_chunks} == {"019de27d-91d4-7d01-a863-1b189c987846"}
 
 
 def test_codex_index_command_uses_fixed_db_and_default_model(
