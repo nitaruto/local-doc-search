@@ -11,7 +11,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .client import find_live_server, search_via_server
+from .client import ServerSearchError, find_live_server, search_via_server
 from .codex_history import (
     CODEX_HISTORY_DB,
     CODEX_HISTORY_INDEX_KIND,
@@ -211,15 +211,18 @@ def search_cmd(
     if not no_server:
         registry = find_live_server(db_paths)
         if registry is not None and server_device_matches(registry, device):
-            rows = search_via_server(
-                registry,
-                query=query,
-                mode=mode,
-                limit=limit,
-                candidates=max(candidates, limit),
-            )
-            output_results(rows, json_output=json_output, explain=explain)
-            return
+            try:
+                rows = search_via_server(
+                    registry,
+                    query=query,
+                    mode=mode,
+                    limit=limit,
+                    candidates=max(candidates, limit),
+                )
+                output_results(rows, json_output=json_output, explain=explain)
+                return
+            except ServerSearchError as exc:
+                console.print(f"[yellow]Warning: {exc}. Falling back to local search.[/yellow]")
 
     embedder = build_search_embedder(db_paths, mode=mode, device=device)
     rows = search_many(

@@ -419,6 +419,24 @@ def test_search_migrates_older_chunk_columns(tmp_path: Path) -> None:
     assert "line_no" in columns
 
 
+def test_search_command_falls_back_when_server_errors(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+
+    monkeypatch.setattr(cli, "find_live_server", lambda _: {"device": "cpu"})
+
+    def failing_server(*args: object, **kwargs: object) -> object:
+        raise cli.ServerSearchError("server-side schema error")
+
+    monkeypatch.setattr(cli, "search_via_server", failing_server)
+
+    cli.search_cmd(db=[db], query="日本語", mode="fts", limit=3)
+
+
 def test_mcp_server_lists_and_calls_search_tool(
     tmp_path: Path, sample_roots: tuple[Path, Path]
 ) -> None:

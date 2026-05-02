@@ -13,6 +13,10 @@ from .search import SearchMode, SearchResult
 REGISTRY_DIR = Path.home() / ".cache" / "tt-search" / "servers"
 
 
+class ServerSearchError(RuntimeError):
+    pass
+
+
 def db_set_hash(db_paths: list[Path]) -> str:
     normalized = [str(path) for path in normalize_db_paths(db_paths)]
     return hashlib.sha256("\n".join(normalized).encode("utf-8")).hexdigest()[:24]
@@ -100,6 +104,10 @@ def search_via_server(
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        payload = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise ServerSearchError(f"tt-search server returned HTTP {exc.code}: {body}") from exc
     return [SearchResult(**item) for item in payload["results"]]
