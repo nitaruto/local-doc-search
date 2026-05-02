@@ -217,6 +217,18 @@ def result_to_mcp_dict(result: SearchResult, *, explain: bool) -> dict[str, Any]
         "source": result.source,
         "text": result.text,
     }
+    if result.session_id is not None:
+        payload.update(
+            {
+                "session_id": result.session_id,
+                "cwd": result.cwd,
+                "role": result.role,
+                "turn_id": result.turn_id,
+                "timestamp": result.timestamp,
+                "session_path": result.session_path,
+                "line_no": result.line_no,
+            }
+        )
     if explain:
         payload["fts_rank"] = result.fts_rank
         payload["vec_distance"] = result.vec_distance

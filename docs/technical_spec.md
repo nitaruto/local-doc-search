@@ -40,7 +40,7 @@ SQLite DBには以下を保存する。
   - fileごとのchunk本文
   - `chunk_index`, `start_offset`, `end_offset`
   - `start_line`, `end_line`
-  - Codex履歴用metadata: `session_id`, `cwd`, `role`, `turn_id`, `timestamp`, `session_path`
+  - Codex履歴用metadata: `session_id`, `cwd`, `role`, `turn_id`, `timestamp`, `session_path`, `line_no`
 - `chunks_fts`
   - `fts5(path UNINDEXED, text, tokenize='trigram')`
 - `chunk_vec`
@@ -197,6 +197,7 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 
 - `session_meta.payload.id` を `session_id` として保存する。
 - `session_meta.payload.cwd` を `cwd` として保存する。
+- index対象messageのJSONL内1-origin行番号を `line_no` として保存する。
 - `response_item.payload.type == "message"` のうち、`role=user` の実指示をindexする。
 - `role=assistant` は `phase=final_answer` のみindexする。
 - `phase=commentary` の途中経過、developer message、tool call/output、reasoning、subagent/guardian session、AGENTS/env初期contextはindexしない。
@@ -206,7 +207,7 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 
 - `--db` と `--model` は指定しない。
 - vector系検索では固定DB metadataの `embedding_model` を使う。
-- 出力には `session_id`, `cwd`, `role`, `timestamp`, `session_path` を含める。
+- 出力には `session_id`, `cwd`, `role`, `timestamp`, `session_path`, `line_no` を含める。
 
 利用例:
 
@@ -225,7 +226,7 @@ uv run tt-search codex-search --query "以前相談した内容" --json
 - index時rootからの相対path: `relative_path`
 - chunk番号: `chunk_index`
 - 行番号範囲: `start_line`, `end_line`
-- Codex履歴検索時: `session_id`, `cwd`, `role`, `timestamp`, `session_path`
+- Codex履歴検索時: `session_id`, `cwd`, `role`, `timestamp`, `session_path`, `line_no`
 - snippet
 - `--explain` 指定時:
   - `fts_rank`

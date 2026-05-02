@@ -34,6 +34,7 @@ class SearchResult:
     turn_id: str | None = None
     timestamp: str | None = None
     session_path: str | None = None
+    line_no: int | None = None
 
 
 def search(
@@ -151,6 +152,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             c.turn_id AS turn_id,
             c.timestamp AS timestamp,
             c.session_path AS session_path,
+            c.line_no AS line_no,
             bm25(chunks_fts) AS fts_rank
         FROM chunks_fts
         JOIN chunks c ON c.id = chunks_fts.rowid
@@ -182,6 +184,7 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             turn_id=optional_str(row["turn_id"]),
             timestamp=optional_str(row["timestamp"]),
             session_path=optional_str(row["session_path"]),
+            line_no=optional_int(row["line_no"]),
         )
         for row in rows
     ]
@@ -206,7 +209,8 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             c.role AS role,
             c.turn_id AS turn_id,
             c.timestamp AS timestamp,
-            c.session_path AS session_path
+            c.session_path AS session_path,
+            c.line_no AS line_no
         FROM chunks c
         JOIN files f ON f.id = c.file_id
         WHERE c.text LIKE ? ESCAPE '\\'
@@ -236,6 +240,7 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             turn_id=optional_str(row["turn_id"]),
             timestamp=optional_str(row["timestamp"]),
             session_path=optional_str(row["session_path"]),
+            line_no=optional_int(row["line_no"]),
         )
         for row in rows
     ]
@@ -268,6 +273,7 @@ def vec_candidates(
             c.turn_id AS turn_id,
             c.timestamp AS timestamp,
             c.session_path AS session_path,
+            c.line_no AS line_no,
             v.distance AS vec_distance
         FROM chunk_vec v
         JOIN chunks c ON c.id = v.rowid
@@ -298,6 +304,7 @@ def vec_candidates(
             turn_id=optional_str(row["turn_id"]),
             timestamp=optional_str(row["timestamp"]),
             session_path=optional_str(row["session_path"]),
+            line_no=optional_int(row["line_no"]),
         )
         for row in rows
         for vec_distance in [require_vec_distance(row["vec_distance"])]
@@ -306,6 +313,10 @@ def vec_candidates(
 
 def optional_str(value: object) -> str | None:
     return None if value is None else str(value)
+
+
+def optional_int(value: object) -> int | None:
+    return None if value is None else int(value)
 
 
 def rerank_by_vector(

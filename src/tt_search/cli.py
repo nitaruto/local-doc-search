@@ -449,7 +449,7 @@ def print_results(rows: list[object], *, explain: bool) -> None:
     if show_db_path:
         columns.append("db_path")
     if show_session:
-        columns.extend(["session_id", "cwd", "role", "timestamp"])
+        columns.extend(["session_id", "cwd", "role", "timestamp", "line_no"])
     columns.extend(["path", "relative_path", "lines", "chunk", "snippet"])
     table = Table(*columns)
     if explain:
@@ -469,6 +469,7 @@ def print_results(rows: list[object], *, explain: bool) -> None:
                     row.cwd or "",
                     row.role or "",
                     row.timestamp or "",
+                    "" if getattr(row, "line_no", None) is None else str(row.line_no),
                 ]
             )
         values.extend(

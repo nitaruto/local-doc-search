@@ -94,6 +94,7 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
             turn_id TEXT,
             timestamp TEXT,
             session_path TEXT,
+            line_no INTEGER,
             UNIQUE(file_id, chunk_index)
         );
 
@@ -163,6 +164,8 @@ def ensure_chunks_columns(con: sqlite3.Connection) -> None:
     for column in ("session_id", "cwd", "role", "turn_id", "timestamp", "session_path"):
         if column not in columns:
             con.execute(f"ALTER TABLE chunks ADD COLUMN {column} TEXT")
+    if "line_no" not in columns:
+        con.execute("ALTER TABLE chunks ADD COLUMN line_no INTEGER")
 
 
 def set_metadata(con: sqlite3.Connection, key: str, value: str) -> None:

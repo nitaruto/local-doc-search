@@ -35,6 +35,7 @@ class CodexTurn:
     timestamp: str
     turn_id: str | None
     session_path: Path
+    line_no: int
 
 
 def iter_codex_session_files(roots: list[Path]) -> list[Path]:
@@ -57,7 +58,7 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
     is_subagent_session = False
 
     with path.open(encoding="utf-8") as handle:
-        for line in handle:
+        for line_no, line in enumerate(handle, start=1):
             try:
                 item = json.loads(line)
             except json.JSONDecodeError:
@@ -100,6 +101,7 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
                     timestamp=str(item.get("timestamp", "")),
                     turn_id=current_turn_id,
                     session_path=path,
+                    line_no=line_no,
                 )
             )
     return turns
@@ -184,6 +186,7 @@ def codex_indexed_file(path: Path, roots: list[Path]) -> tuple[IndexedFile | Non
             turn_id=turn.turn_id,
             timestamp=turn.timestamp,
             session_path=str(turn.session_path),
+            line_no=turn.line_no,
         )
         for index, turn in enumerate(turns)
     ]

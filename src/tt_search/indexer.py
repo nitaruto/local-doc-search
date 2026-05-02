@@ -48,6 +48,7 @@ class Chunk:
     turn_id: str | None = None
     timestamp: str | None = None
     session_path: str | None = None
+    line_no: int | None = None
 
 
 @dataclass(frozen=True)
@@ -574,9 +575,10 @@ def insert_chunk(
             role,
             turn_id,
             timestamp,
-            session_path
+            session_path,
+            line_no
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             file_id,
@@ -592,6 +594,7 @@ def insert_chunk(
             chunk.turn_id,
             chunk.timestamp,
             chunk.session_path,
+            chunk.line_no,
         ),
     )
     chunk_id = int(cursor.lastrowid)

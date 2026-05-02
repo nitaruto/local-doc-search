@@ -71,7 +71,8 @@ uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索した
 Index and search Codex session history. The database is fixed at
 `~/.codex/tt-search/codex-history.sqlite`, so `--db` is not required.
 `codex-index` reads `~/.codex/sessions` by default and uses
-`cl-nagoya/ruri-v3-310m` unless `--model` is specified.
+`cl-nagoya/ruri-v3-310m` unless `--model` is specified. Results include
+the source session path and JSONL line number for the indexed turn.
 
 ```bash
 uv run tt-search codex-index --rebuild

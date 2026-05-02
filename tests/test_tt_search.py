@@ -523,7 +523,8 @@ def test_chunk_session_metadata_is_searchable(tmp_path: Path) -> None:
                 role = 'assistant',
                 turn_id = 'turn-1',
                 timestamp = '2026-05-02T00:00:00Z',
-                session_path = '/Users/me/.codex/sessions/session.jsonl'
+                session_path = '/Users/me/.codex/sessions/session.jsonl',
+                line_no = 42
             """
         )
         results = search(
@@ -542,6 +543,7 @@ def test_chunk_session_metadata_is_searchable(tmp_path: Path) -> None:
     assert results[0].turn_id == "turn-1"
     assert results[0].timestamp == "2026-05-02T00:00:00Z"
     assert results[0].session_path == "/Users/me/.codex/sessions/session.jsonl"
+    assert results[0].line_no == 42
 
 
 def test_parse_codex_session_file_extracts_user_and_final_answer(tmp_path: Path) -> None:
@@ -557,6 +559,7 @@ def test_parse_codex_session_file_extracts_user_and_final_answer(tmp_path: Path)
     assert {turn.session_id for turn in turns} == {"019de27d-91d4-7d01-a863-1b189c987846"}
     assert {turn.cwd for turn in turns} == {"/work/project"}
     assert {turn.turn_id for turn in turns} == {"turn-1"}
+    assert [turn.line_no for turn in turns] == [4, 6]
 
 
 def test_parse_codex_session_file_skips_subagent_sessions(tmp_path: Path) -> None:
@@ -599,6 +602,7 @@ def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
     assert {result.session_id for result in results} == {"019de27d-91d4-7d01-a863-1b189c987846"}
     assert {result.cwd for result in results} == {"/work/project"}
     assert {Path(result.session_path or "").name for result in results} == {"rollout-test.jsonl"}
+    assert {result.line_no for result in results} == {4, 6}
 
 
 def test_codex_index_command_uses_fixed_db_and_default_model(
