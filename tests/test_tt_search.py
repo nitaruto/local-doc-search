@@ -83,6 +83,11 @@ class RecordingProgress:
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
         self.events.append(("embedding", path.name, chunks))
 
+    def on_embedding_batch_done(
+        self, *, path: Path, embedded_chunks: int, total_chunks: int
+    ) -> None:
+        self.events.append((f"batch:{embedded_chunks}", path.name, total_chunks))
+
 
 class FakeRichProgress:
     def __init__(self) -> None:
@@ -534,24 +539,31 @@ def test_index_progress_reports_scan_and_file_events(
 
     assert progress.total_files == 2
     assert ("embedding", "search.md", 1) in progress.events
+    assert ("batch:1", "search.md", 1) in progress.events
     assert ("indexed", "search.md", 1) in progress.events
     assert ("embedding", "travel.md", 1) in progress.events
+    assert ("batch:1", "travel.md", 1) in progress.events
     assert ("indexed", "travel.md", 1) in progress.events
 
 
 def test_rich_index_progress_reports_chunk_rate() -> None:
-    times = iter([0.0, 0.0, 1.0, 2.0])
+    times = iter([0.0, 0.0, 1.0, 2.0, 3.0, 4.0])
     progress = FakeRichProgress()
     reporter = cli.RichIndexProgress(progress, clock=lambda: next(times))
 
     reporter.on_scan_complete(2)
     reporter.on_embedding_start(path=Path("a.md"), chunks=3)
+    reporter.on_embedding_batch_done(path=Path("a.md"), embedded_chunks=2, total_chunks=3)
+    reporter.on_embedding_batch_done(path=Path("a.md"), embedded_chunks=3, total_chunks=3)
     reporter.on_file_done(path=Path("a.md"), status="indexed", chunks=3)
 
     assert progress.added == [("Indexing files", 2)]
     descriptions = [str(update["description"]) for update in progress.updates]
     assert "total=0 chunks, 0.00 chunks/s" in descriptions[0]
-    assert "total=3 chunks, 1.50 chunks/s" in descriptions[1]
+    assert "embedding: a.md (2/3 chunks)" in descriptions[1]
+    assert "total=2 chunks, 1.00 chunks/s" in descriptions[1]
+    assert "embedding: a.md (3/3 chunks)" in descriptions[2]
+    assert "total=3 chunks, 1.00 chunks/s" in descriptions[2]
 
 
 def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:

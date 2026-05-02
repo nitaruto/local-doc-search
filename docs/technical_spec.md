@@ -72,7 +72,8 @@ SQLite DBには以下を保存する。
   - 将来はreStructuredText構造単位、code block考慮などを拡張子別に追加できる。
 - document chunkは `passage: ...` prefixでembeddingする。
   - 実際のprefixはmodelごとのprefix policyで決まる。
-- index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数、累計処理chunk数、1秒あたりの処理chunk数をprogress表示する。
+- index中は候補ファイル数、処理済みファイル数、現在の状態、embedding対象chunk数、embedding済みchunk数、累計処理chunk数、1秒あたりの処理chunk数をprogress表示する。
+- embeddingは `--batch-size` ごとのchunk batch単位で進捗を更新する。処理済みファイル数はファイル全体のDB反映が完了した時点で進める。
 
 exclude例:
 

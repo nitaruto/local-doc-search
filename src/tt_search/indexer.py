@@ -64,6 +64,11 @@ class IndexProgress(Protocol):
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
         """Called before embedding chunks for a file."""
 
+    def on_embedding_batch_done(
+        self, *, path: Path, embedded_chunks: int, total_chunks: int
+    ) -> None:
+        """Called after embedding a batch of chunks for a file."""
+
 
 class ChunkingStrategy(Protocol):
     name: str
@@ -437,7 +442,7 @@ def index_paths(
         chunks = chunk_file(indexed.path, indexed.text)
         if progress is not None:
             progress.on_embedding_start(path=indexed.path, chunks=len(chunks))
-        upsert_file(con, indexed, chunks, embedder)
+        upsert_file(con, indexed, chunks, embedder, progress=progress)
         indexed_files += 1
         chunk_count += len(chunks)
         if progress is not None:
@@ -505,6 +510,7 @@ def upsert_file(
     indexed: IndexedFile,
     chunks: list[Chunk],
     embedder: EmbeddingProvider,
+    progress: IndexProgress | None = None,
 ) -> None:
     old = con.execute("SELECT id FROM files WHERE path = ?", (str(indexed.path),)).fetchone()
     if old is not None:
@@ -525,37 +531,57 @@ def upsert_file(
         ),
     )
     file_id = int(cursor.lastrowid)
-    embeddings = embedder.embed_passages([chunk.text for chunk in chunks]) if chunks else []
-    for chunk, embedding in zip(chunks, embeddings, strict=True):
-        cursor = con.execute(
-            """
-            INSERT INTO chunks(
-                file_id,
-                chunk_index,
-                start_offset,
-                end_offset,
-                start_line,
-                end_line,
-                text
+    embedded_chunks = 0
+    for start in range(0, len(chunks), embedder.batch_size):
+        chunk_batch = chunks[start : start + embedder.batch_size]
+        embeddings = embedder.embed_passages([chunk.text for chunk in chunk_batch])
+        for chunk, embedding in zip(chunk_batch, embeddings, strict=True):
+            insert_chunk(con, indexed, file_id, chunk, embedding)
+        embedded_chunks += len(chunk_batch)
+        if progress is not None:
+            progress.on_embedding_batch_done(
+                path=indexed.path,
+                embedded_chunks=embedded_chunks,
+                total_chunks=len(chunks),
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                file_id,
-                chunk.index,
-                chunk.start_offset,
-                chunk.end_offset,
-                chunk.start_line,
-                chunk.end_line,
-                chunk.text,
-            ),
+
+
+def insert_chunk(
+    con: sqlite3.Connection,
+    indexed: IndexedFile,
+    file_id: int,
+    chunk: Chunk,
+    embedding: list[float],
+) -> None:
+    cursor = con.execute(
+        """
+        INSERT INTO chunks(
+            file_id,
+            chunk_index,
+            start_offset,
+            end_offset,
+            start_line,
+            end_line,
+            text
         )
-        chunk_id = int(cursor.lastrowid)
-        con.execute(
-            "INSERT INTO chunks_fts(rowid, path, text) VALUES (?, ?, ?)",
-            (chunk_id, str(indexed.path), chunk.text),
-        )
-        con.execute(
-            "INSERT INTO chunk_vec(rowid, embedding) VALUES (?, ?)",
-            (chunk_id, serialize_vector(embedding)),
-        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            file_id,
+            chunk.index,
+            chunk.start_offset,
+            chunk.end_offset,
+            chunk.start_line,
+            chunk.end_line,
+            chunk.text,
+        ),
+    )
+    chunk_id = int(cursor.lastrowid)
+    con.execute(
+        "INSERT INTO chunks_fts(rowid, path, text) VALUES (?, ?, ?)",
+        (chunk_id, str(indexed.path), chunk.text),
+    )
+    con.execute(
+        "INSERT INTO chunk_vec(rowid, embedding) VALUES (?, ?)",
+        (chunk_id, serialize_vector(embedding)),
+    )

@@ -115,6 +115,7 @@ class RichIndexProgress:
         self.clock = clock
         self.started_at = clock()
         self.processed_chunks = 0
+        self.current_file_embedded_chunks = 0
 
     def on_scan_complete(self, total_files: int) -> None:
         self.started_at = self.clock()
@@ -123,7 +124,6 @@ class RichIndexProgress:
     def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
         if self.task_id is None:
             return
-        self.processed_chunks += chunks
         description = f"{status}: {path.name}"
         if chunks:
             description = f"{description} ({chunks} chunks)"
@@ -133,9 +133,25 @@ class RichIndexProgress:
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
         if self.task_id is None:
             return
+        self.current_file_embedded_chunks = 0
         self.progress.update(
             self.task_id,
             description=f"embedding: {path.name} ({chunks} chunks) [{self.chunk_rate_label()}]",
+        )
+
+    def on_embedding_batch_done(
+        self, *, path: Path, embedded_chunks: int, total_chunks: int
+    ) -> None:
+        if self.task_id is None:
+            return
+        self.processed_chunks += embedded_chunks - self.current_file_embedded_chunks
+        self.current_file_embedded_chunks = embedded_chunks
+        self.progress.update(
+            self.task_id,
+            description=(
+                f"embedding: {path.name} ({embedded_chunks}/{total_chunks} chunks) "
+                f"[{self.chunk_rate_label()}]"
+            ),
         )
 
     def chunk_rate_label(self) -> str:
