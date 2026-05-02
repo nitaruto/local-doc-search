@@ -146,7 +146,7 @@ search時:
 - 安定運用では `intfloat/multilingual-e5-small` を基本とする。
 - 日本語精度を重視する場合は `cl-nagoya/ruri-v3-*` を優先候補とする。
 - `sbintuitions/sarashina-embedding-v2-1b` はSentenceTransformer backendで利用できる日本語重視の候補。公式model cardのRetrieval/Reranking用prefixを付与する。Sarashina Model NonCommercial License Agreementで配布されているため用途に注意する。
-- `pfnet/plamo-embedding-1b` は現状、CPU/MPSともに非有限値を返す確率が高く、retry前提になるため実験用扱いとする。通常利用では推奨しない。
+- `pfnet/plamo-embedding-1b` は `plamo-custom` backendで対応する。過去に確認した非有限値対策として検出・warning・retryは残すが、通常の失敗を前提にした扱いではない。
 
 現在のbackend:
 
@@ -155,8 +155,9 @@ search時:
 - `plamo-custom`
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
-  - model configの `torch_dtype=bfloat16` に合わせ、modelは明示的に `bfloat16` でloadする。sqlite-vecへ保存するembeddingは既存通り `float32` へ変換する。
-  - PLaMo custom codeのRotaryEmbedding cacheがload後に確率的に壊れることがあるため、device移動後、dimension probe前に全layerのrotary cacheを再生成する。
+  - `AutoModel.from_pretrained()` では `dtype=torch.bfloat16` を明示する。sqlite-vecへ保存するembeddingは既存通り `float32` へ変換する。
+  - PLaMoのcustom codeは `config.max_length` を参照するため、存在しない場合は `max_position_embeddings` から補完する。
+  - PLaMoのRotaryEmbedding cacheは、Transformersのmeta tensor経由loadとnon-persistent bufferの組み合わせで不正な状態になり得るため、device移動後、dimension probe前に全layerのrotary cacheを現在device/dtypeで再生成する。
   - `--device auto` は他backendと同じく、PyTorch MPSが利用可能なら `mps`、不可なら `cpu` を使う。
   - PLaMoの `encode_document` / `encode_query` はCPUでも確率的に非有限値を返すことがあるため、非有限値の場合のみwarningを出して最大5回retryする。全試行失敗した場合はエラーにし、不正vectorは保存しない。
   - document chunkは `encode_document(texts, tokenizer)`、queryは `encode_query(text, tokenizer)` でembeddingする。
