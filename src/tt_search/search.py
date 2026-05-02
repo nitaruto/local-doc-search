@@ -28,6 +28,12 @@ class SearchResult:
     fts_rank: float | None = None
     vec_distance: float | None = None
     source: str = ""
+    session_id: str | None = None
+    cwd: str | None = None
+    role: str | None = None
+    turn_id: str | None = None
+    timestamp: str | None = None
+    session_path: str | None = None
 
 
 def search(
@@ -139,6 +145,12 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             c.start_line AS start_line,
             c.end_line AS end_line,
             c.text AS text,
+            c.session_id AS session_id,
+            c.cwd AS cwd,
+            c.role AS role,
+            c.turn_id AS turn_id,
+            c.timestamp AS timestamp,
+            c.session_path AS session_path,
             bm25(chunks_fts) AS fts_rank
         FROM chunks_fts
         JOIN chunks c ON c.id = chunks_fts.rowid
@@ -164,6 +176,12 @@ def fts_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> l
             score=-float(row["fts_rank"]),
             fts_rank=float(row["fts_rank"]),
             source="fts",
+            session_id=optional_str(row["session_id"]),
+            cwd=optional_str(row["cwd"]),
+            role=optional_str(row["role"]),
+            turn_id=optional_str(row["turn_id"]),
+            timestamp=optional_str(row["timestamp"]),
+            session_path=optional_str(row["session_path"]),
         )
         for row in rows
     ]
@@ -182,7 +200,13 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             c.end_offset AS end_offset,
             c.start_line AS start_line,
             c.end_line AS end_line,
-            c.text AS text
+            c.text AS text,
+            c.session_id AS session_id,
+            c.cwd AS cwd,
+            c.role AS role,
+            c.turn_id AS turn_id,
+            c.timestamp AS timestamp,
+            c.session_path AS session_path
         FROM chunks c
         JOIN files f ON f.id = c.file_id
         WHERE c.text LIKE ? ESCAPE '\\'
@@ -206,6 +230,12 @@ def like_candidates(con: sqlite3.Connection, query: str, *, candidates: int) -> 
             score=1.0,
             fts_rank=None,
             source="like",
+            session_id=optional_str(row["session_id"]),
+            cwd=optional_str(row["cwd"]),
+            role=optional_str(row["role"]),
+            turn_id=optional_str(row["turn_id"]),
+            timestamp=optional_str(row["timestamp"]),
+            session_path=optional_str(row["session_path"]),
         )
         for row in rows
     ]
@@ -232,6 +262,12 @@ def vec_candidates(
             c.start_line AS start_line,
             c.end_line AS end_line,
             c.text AS text,
+            c.session_id AS session_id,
+            c.cwd AS cwd,
+            c.role AS role,
+            c.turn_id AS turn_id,
+            c.timestamp AS timestamp,
+            c.session_path AS session_path,
             v.distance AS vec_distance
         FROM chunk_vec v
         JOIN chunks c ON c.id = v.rowid
@@ -256,10 +292,20 @@ def vec_candidates(
             score=distance_to_score(vec_distance),
             vec_distance=vec_distance,
             source="vec",
+            session_id=optional_str(row["session_id"]),
+            cwd=optional_str(row["cwd"]),
+            role=optional_str(row["role"]),
+            turn_id=optional_str(row["turn_id"]),
+            timestamp=optional_str(row["timestamp"]),
+            session_path=optional_str(row["session_path"]),
         )
         for row in rows
         for vec_distance in [require_vec_distance(row["vec_distance"])]
     ]
+
+
+def optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
 
 
 def rerank_by_vector(

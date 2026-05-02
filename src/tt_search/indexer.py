@@ -42,6 +42,12 @@ class Chunk:
     start_line: int
     end_line: int
     text: str
+    session_id: str | None = None
+    cwd: str | None = None
+    role: str | None = None
+    turn_id: str | None = None
+    timestamp: str | None = None
+    session_path: str | None = None
 
 
 @dataclass(frozen=True)
@@ -562,9 +568,15 @@ def insert_chunk(
             end_offset,
             start_line,
             end_line,
-            text
+            text,
+            session_id,
+            cwd,
+            role,
+            turn_id,
+            timestamp,
+            session_path
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             file_id,
@@ -574,6 +586,12 @@ def insert_chunk(
             chunk.start_line,
             chunk.end_line,
             chunk.text,
+            chunk.session_id,
+            chunk.cwd,
+            chunk.role,
+            chunk.turn_id,
+            chunk.timestamp,
+            chunk.session_path,
         ),
     )
     chunk_id = int(cursor.lastrowid)

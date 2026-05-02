@@ -88,6 +88,12 @@ def ensure_schema(con: sqlite3.Connection, *, embedding_dim: int, embedding_mode
             start_line INTEGER NOT NULL,
             end_line INTEGER NOT NULL,
             text TEXT NOT NULL,
+            session_id TEXT,
+            cwd TEXT,
+            role TEXT,
+            turn_id TEXT,
+            timestamp TEXT,
+            session_path TEXT,
             UNIQUE(file_id, chunk_index)
         );
 
@@ -154,6 +160,9 @@ def ensure_chunks_columns(con: sqlite3.Connection) -> None:
                 end_line = COALESCE(end_line, 1)
             """
         )
+    for column in ("session_id", "cwd", "role", "turn_id", "timestamp", "session_path"):
+        if column not in columns:
+            con.execute(f"ALTER TABLE chunks ADD COLUMN {column} TEXT")
 
 
 def set_metadata(con: sqlite3.Connection, key: str, value: str) -> None:

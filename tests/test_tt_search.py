@@ -434,6 +434,44 @@ def test_chunk_line_numbers_are_indexed(tmp_path: Path) -> None:
     assert rows[0]["text"] == "title\n\nfirst paragraph\nsecond line\n\nlast paragraph"
 
 
+def test_chunk_session_metadata_is_searchable(tmp_path: Path) -> None:
+    root = tmp_path / "docs"
+    root.mkdir()
+    (root / "session.md").write_text("codex history search target\n", encoding="utf-8")
+    db = tmp_path / "index.sqlite"
+    build_db(db, [root], [".md"])
+
+    with connect(db) as con:
+        con.execute(
+            """
+            UPDATE chunks
+            SET
+                session_id = '019de27d-91d4-7d01-a863-1b189c987846',
+                cwd = '/work/project',
+                role = 'assistant',
+                turn_id = 'turn-1',
+                timestamp = '2026-05-02T00:00:00Z',
+                session_path = '/Users/me/.codex/sessions/session.jsonl'
+            """
+        )
+        results = search(
+            con,
+            query="codex",
+            mode="fts",
+            limit=10,
+            candidates=10,
+            embedder=None,
+        )
+
+    assert len(results) == 1
+    assert results[0].session_id == "019de27d-91d4-7d01-a863-1b189c987846"
+    assert results[0].cwd == "/work/project"
+    assert results[0].role == "assistant"
+    assert results[0].turn_id == "turn-1"
+    assert results[0].timestamp == "2026-05-02T00:00:00Z"
+    assert results[0].session_path == "/Users/me/.codex/sessions/session.jsonl"
+
+
 def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:
     text = "aaa\n\nbbb\n\ncccc\n"
 

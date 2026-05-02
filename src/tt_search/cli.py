@@ -331,9 +331,12 @@ def files_cmd(
 
 def print_results(rows: list[object], *, explain: bool) -> None:
     show_db_path = any(row.db_path for row in rows)
+    show_session = any(getattr(row, "session_id", None) for row in rows)
     columns = ["score"]
     if show_db_path:
         columns.append("db_path")
+    if show_session:
+        columns.extend(["session_id", "cwd", "role", "timestamp"])
     columns.extend(["path", "relative_path", "lines", "chunk", "snippet"])
     table = Table(*columns)
     if explain:
@@ -346,6 +349,15 @@ def print_results(rows: list[object], *, explain: bool) -> None:
         values = [f"{row.score:.4f}"]
         if show_db_path:
             values.append(row.db_path or "")
+        if show_session:
+            values.extend(
+                [
+                    row.session_id or "",
+                    row.cwd or "",
+                    row.role or "",
+                    row.timestamp or "",
+                ]
+            )
         values.extend(
             [
                 row.path,
