@@ -56,6 +56,8 @@ SQLite DBには以下を保存する。
 
 `local-doc-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...] [--exclude REGEX ...]` でindexする。
 
+index開始時はcron logや長時間実行時の識別のため、`command`, `db`, `roots`, `model`, `device`, `batch_size`, `rebuild`, `extensions`, `exclude` を標準出力に表示する。
+
 処理内容:
 
 - rootは複数指定できる。

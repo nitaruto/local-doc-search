@@ -458,6 +458,37 @@ def test_search_command_falls_back_when_server_errors(
     cli.search_cmd(db=[db], query="日本語", mode="fts", limit=3)
 
 
+def test_index_start_summary_includes_target_roots(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    root = tmp_path / "docs"
+    db = tmp_path / "index.sqlite"
+
+    cli.print_index_start_summary(
+        command="index",
+        db=db,
+        roots=[root],
+        model="fake-model",
+        device="cpu",
+        batch_size=8,
+        rebuild=False,
+        extensions=[".md"],
+        exclude_patterns=["^archive/"],
+    )
+    output = capsys.readouterr().out
+
+    assert "== local-doc-search index start ==" in output
+    assert f"db={db}" in output
+    assert f"roots={root}" in output
+    assert "model=fake-model" in output
+    assert "device=cpu" in output
+    assert "batch_size=8" in output
+    assert "rebuild=false" in output
+    assert "extensions=.md" in output
+    assert "exclude=^archive/" in output
+
+
 def test_search_command_without_db_uses_single_live_server(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1267,7 +1298,7 @@ def test_codex_indexed_file_splits_long_turns(tmp_path: Path) -> None:
 
 
 def test_codex_index_command_uses_fixed_db_and_default_model(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     root = tmp_path / "sessions"
     session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
@@ -1283,10 +1314,16 @@ def test_codex_index_command_uses_fixed_db_and_default_model(
     monkeypatch.setattr(cli, "create_embedding_provider", recording_provider)
 
     cli.codex_index_cmd(root=[root], rebuild=True)
+    output = capsys.readouterr().out
 
     with connect(db) as con:
         metadata = cast(dict[str, str], format_info(con)["metadata"])
 
+    assert "== local-doc-search codex-index start ==" in output
+    assert f"db={db}" in output
+    assert f"roots={root.resolve()}" in output
+    assert "model=cl-nagoya/ruri-v3-310m" in output
+    assert "rebuild=true" in output
     assert created_models == ["cl-nagoya/ruri-v3-310m"]
     assert metadata["index_kind"] == CODEX_HISTORY_INDEX_KIND
     assert metadata["embedding_model"] == "fake"

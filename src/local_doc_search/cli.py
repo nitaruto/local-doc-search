@@ -89,6 +89,17 @@ def index(
     """Build or update a search database."""
     if not root:
         raise typer.BadParameter("At least one --root is required")
+    print_index_start_summary(
+        command="index",
+        db=db,
+        roots=root,
+        model=model,
+        device=device,
+        batch_size=batch_size,
+        rebuild=rebuild,
+        extensions=ext,
+        exclude_patterns=exclude,
+    )
     embedder = create_embedding_provider(
         model_name=model,
         device=device,
@@ -236,6 +247,29 @@ def search_cmd(
 
 
 app.command(name="search")(search_cmd)
+
+
+def print_index_start_summary(
+    *,
+    command: str,
+    db: Path,
+    roots: list[Path],
+    model: str,
+    device: DeviceOption,
+    batch_size: int,
+    rebuild: bool,
+    extensions: list[str] | None,
+    exclude_patterns: list[str] | None,
+) -> None:
+    typer.echo(f"== local-doc-search {command} start ==")
+    typer.echo(f"db={db.expanduser()}")
+    typer.echo(f"model={model}")
+    typer.echo(f"device={device}")
+    typer.echo(f"batch_size={batch_size}")
+    typer.echo(f"rebuild={str(rebuild).lower()}")
+    typer.echo(f"roots={','.join(str(root.expanduser()) for root in roots)}")
+    typer.echo(f"extensions={','.join(extensions) if extensions else 'default'}")
+    typer.echo(f"exclude={','.join(exclude_patterns) if exclude_patterns else ''}")
 
 
 @app.command(name="tui-search")
@@ -402,6 +436,17 @@ def codex_index_cmd(
         roots = validate_codex_roots(root or [CODEX_SESSIONS_ROOT])
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    print_index_start_summary(
+        command="codex-index",
+        db=CODEX_HISTORY_DB,
+        roots=roots,
+        model=model,
+        device=device,
+        batch_size=batch_size,
+        rebuild=rebuild,
+        extensions=None,
+        exclude_patterns=None,
+    )
     embedder = create_embedding_provider(
         model_name=model,
         device=device,

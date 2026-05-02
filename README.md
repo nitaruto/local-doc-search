@@ -10,6 +10,8 @@ It builds a SQLite database from files under one or more directories and combine
 
 Indexing shows progress for discovered files, skipped/unchanged files, embedding batches,
 and processed chunks per second.
+Indexing also prints a start summary with the command, DB, roots, model, device,
+batch size, rebuild flag, extensions, and exclude patterns.
 Short paragraphs are packed into chunks up to 600 characters by default; very long
 paragraphs are split with 120-character overlap.
 Packed paragraph chunks overlap by one paragraph when possible.
