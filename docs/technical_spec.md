@@ -376,8 +376,10 @@ cwd = "/absolute/path/to/local_search"
 - transportはstdio。
 - JSON-RPC messageはJSON Linesと `Content-Length` framingの両方を受け付ける。
 - `initialize`, `ping`, `tools/list`, `tools/call`, `resources/list`, `prompts/list` に応答する。
-- toolは `search` と `roots`。
-- `search` toolの引数:
+- toolは `search`, `codex_session_search`, `roots`。
+- `search` toolは `--db` で指定された通常index DBを検索する。
+- `codex_session_search` toolは固定DB `~/.codex/local-doc-search/codex-history.sqlite` のCodex session履歴を検索する。
+- `search` / `codex_session_search` toolの引数:
   - `query`: semantic/vector検索用文字列。
   - `pattern`: SQLite FTS5 `MATCH` に渡すpattern。`AND`, `OR`, `NOT`, `NEAR` などを使える。
   - `query` と `pattern` の少なくとも一方が必須。
@@ -387,6 +389,7 @@ cwd = "/absolute/path/to/local_search"
   - `explain`: `fts_rank` / `vec_distance` を出力に含めるか。デフォルトはfalse。
 - tool結果はJSON文字列として返す。
 - 各resultには `path`, `relative_path`, `start_line`, `end_line`, `chunk_index`, `start_offset`, `end_offset`, `score`, `source`, `text` を含める。
+- `codex_session_search` のresultには、Codex履歴由来の `session_id`, `cwd`, `role`, `turn_id`, `timestamp`, `session_path`, `line_no` も含める。
 - `explain=true` の場合は `fts_rank`, `vec_distance` も含める。
 - `roots` toolは引数なし。`--db` で指定された各DBについて `db_path` と `roots` を返す。
 - `roots` の各要素には `root_path`, `file_count`, `chunk_count` を含める。

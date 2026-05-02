@@ -115,4 +115,6 @@ The MCP server exposes:
 
 - `search`: search indexed text with arguments matching `local-doc-search search`: `query`, `mode`,
   `limit`, `candidates`, and `explain`.
+- `codex_session_search`: search indexed Codex session history from the fixed
+  `~/.codex/local-doc-search/codex-history.sqlite` DB with the same search arguments.
 - `roots`: list the indexed root directories for the DBs configured with `--db`.

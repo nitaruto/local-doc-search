@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import sys
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+from .codex_history import CODEX_HISTORY_DB, CODEX_HISTORY_INDEX_KIND
 from .db import (
     as_json,
     connect,
     fingerprint_many,
+    get_metadata,
     list_indexed_roots,
     normalize_db_paths,
     validate_embedding_compatible,
@@ -28,6 +30,7 @@ class McpSearchServer:
             raise ValueError("At least one --db is required")
         self.device = device
         self._embedder: EmbeddingProvider | None = None
+        self._codex_embedder: EmbeddingProvider | None = None
 
     def serve(self) -> None:
         for message, framing in read_stdio_messages():
@@ -46,7 +49,13 @@ class McpSearchServer:
             elif method == "ping":
                 result = {}
             elif method == "tools/list":
-                result = {"tools": [search_tool_definition(), roots_tool_definition()]}
+                result = {
+                    "tools": [
+                        search_tool_definition(),
+                        codex_session_search_tool_definition(),
+                        roots_tool_definition(),
+                    ]
+                }
             elif method == "resources/list":
                 result = {"resources": []}
             elif method == "prompts/list":
@@ -79,12 +88,15 @@ class McpSearchServer:
                 ],
                 "isError": False,
             }
-        if name != "search":
+        if name not in {"search", "codex_session_search"}:
             raise ValueError(f"Unknown tool: {name}")
         arguments = params.get("arguments", {})
         if not isinstance(arguments, dict):
             raise ValueError("Tool arguments must be an object")
-        results = self.search(arguments)
+        if name == "codex_session_search":
+            results = self.codex_session_search(arguments)
+        else:
+            results = self.search(arguments)
         return {
             "content": [
                 {
@@ -96,6 +108,28 @@ class McpSearchServer:
         }
 
     def search(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        return self.search_db_paths(
+            self.db_paths,
+            arguments,
+            embedder_factory=self.embedder_for_configured_dbs,
+        )
+
+    def codex_session_search(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        codex_db = CODEX_HISTORY_DB.expanduser()
+        validate_codex_history_db(codex_db)
+        return self.search_db_paths(
+            [codex_db],
+            arguments,
+            embedder_factory=self.embedder_for_codex_db,
+        )
+
+    def search_db_paths(
+        self,
+        db_paths: list[Path],
+        arguments: dict[str, Any],
+        *,
+        embedder_factory: Callable[[SearchMode], EmbeddingProvider | None],
+    ) -> list[dict[str, Any]]:
         query = optional_argument_str(arguments, "query")
         pattern = optional_argument_str(arguments, "pattern")
         mode = parse_optional_mode(arguments.get("mode"))
@@ -103,9 +137,9 @@ class McpSearchServer:
         limit = int(arguments.get("limit", 10))
         candidates = max(int(arguments.get("candidates", 50)), limit)
         explain = bool(arguments.get("explain", False))
-        embedder = self.embedder_for(resolved.mode)
+        embedder = embedder_factory(resolved.mode)
         rows = search_many(
-            self.db_paths,
+            db_paths,
             vector_query=resolved.vector_query,
             fts_query=resolved.fts_query,
             fts_is_pattern=resolved.fts_is_pattern,
@@ -129,20 +163,30 @@ class McpSearchServer:
             )
         return results
 
-    def embedder_for(self, mode: SearchMode) -> EmbeddingProvider | None:
+    def embedder_for_configured_dbs(self, mode: SearchMode) -> EmbeddingProvider | None:
         if mode == "fts":
             return None
         if self._embedder is None:
-            fingerprints = fingerprint_many(self.db_paths)
-            metadata = validate_embedding_compatible(fingerprints)
-            model = metadata.get("embedding_model")
-            if model is None:
-                raise ValueError(
-                    "DB does not contain embedding metadata. "
-                    "Rebuild it with `local-doc-search index`."
-                )
-            self._embedder = create_embedding_provider(model_name=model, device=self.device)
+            self._embedder = self.create_embedder_for_paths(self.db_paths)
         return self._embedder
+
+    def embedder_for_codex_db(self, mode: SearchMode) -> EmbeddingProvider | None:
+        if mode == "fts":
+            return None
+        if self._codex_embedder is None:
+            self._codex_embedder = self.create_embedder_for_paths([CODEX_HISTORY_DB.expanduser()])
+        return self._codex_embedder
+
+    def create_embedder_for_paths(self, db_paths: list[Path]) -> EmbeddingProvider:
+        fingerprints = fingerprint_many(db_paths)
+        metadata = validate_embedding_compatible(fingerprints)
+        model = metadata.get("embedding_model")
+        if model is None:
+            raise ValueError(
+                "DB does not contain embedding metadata. "
+                "Rebuild it with `local-doc-search index`."
+            )
+        return create_embedding_provider(model_name=model, device=self.device)
 
 
 def run_mcp_server(db_paths: list[Path], *, device: DeviceOption = "auto") -> None:
@@ -155,49 +199,64 @@ def search_tool_definition() -> dict[str, Any]:
         "description": (
             "Search local-doc-search SQLite indexes. Provide query, pattern, or both."
         ),
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Semantic/vector search query.",
-                },
-                "pattern": {
-                    "type": "string",
-                    "description": (
-                        "FTS5 MATCH pattern. Supports FTS5 operators such as "
-                        "AND, OR, NOT, and NEAR."
-                    ),
-                },
-                "mode": {
-                    "type": "string",
-                    "enum": sorted(SEARCH_MODES),
-                    "description": (
-                        "When both query and pattern are provided, vec-fts gets vector "
-                        "candidates with query then reranks/filters with pattern; "
-                        "fts-vec gets FTS candidates with pattern then reranks with query."
-                    ),
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 10,
-                    "description": "Number of results.",
-                },
-                "candidates": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "default": 50,
-                    "description": "Candidate count before rerank.",
-                },
-                "explain": {
-                    "type": "boolean",
-                    "default": False,
-                    "description": "Include component scores.",
-                },
+        "inputSchema": search_input_schema(),
+    }
+
+
+def codex_session_search_tool_definition() -> dict[str, Any]:
+    return {
+        "name": "codex_session_search",
+        "description": (
+            "Search indexed Codex session history from the fixed local-doc-search "
+            "Codex history DB. Provide query, pattern, or both."
+        ),
+        "inputSchema": search_input_schema(),
+    }
+
+
+def search_input_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "Semantic/vector search query.",
             },
-            "additionalProperties": False,
+            "pattern": {
+                "type": "string",
+                "description": (
+                    "FTS5 MATCH pattern. Supports FTS5 operators such as "
+                    "AND, OR, NOT, and NEAR."
+                ),
+            },
+            "mode": {
+                "type": "string",
+                "enum": sorted(SEARCH_MODES),
+                "description": (
+                    "When both query and pattern are provided, vec-fts gets vector "
+                    "candidates with query then reranks/filters with pattern; "
+                    "fts-vec gets FTS candidates with pattern then reranks with query."
+                ),
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 10,
+                "description": "Number of results.",
+            },
+            "candidates": {
+                "type": "integer",
+                "minimum": 1,
+                "default": 50,
+                "description": "Candidate count before rerank.",
+            },
+            "explain": {
+                "type": "boolean",
+                "default": False,
+                "description": "Include component scores.",
+            },
         },
+        "additionalProperties": False,
     }
 
 
@@ -233,6 +292,21 @@ def optional_argument_str(arguments: dict[str, Any], key: str) -> str | None:
     if value is None:
         return None
     return str(value)
+
+
+def validate_codex_history_db(db_path: Path) -> None:
+    if not db_path.exists():
+        raise ValueError(
+            f"Codex history DB does not exist: {db_path}. "
+            "Run `local-doc-search codex-index` first."
+        )
+    with connect(db_path) as con:
+        index_kind = get_metadata(con, "index_kind")
+    if index_kind != CODEX_HISTORY_INDEX_KIND:
+        raise ValueError(
+            f"DB is not a Codex history index: {db_path}. "
+            "Run `local-doc-search codex-index --rebuild`."
+        )
 
 
 def result_to_mcp_dict(result: SearchResult, *, explain: bool) -> dict[str, Any]:

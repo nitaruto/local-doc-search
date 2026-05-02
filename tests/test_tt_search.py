@@ -8,6 +8,7 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
+import local_doc_search.mcp as mcp_module
 from local_doc_search import cli
 from local_doc_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
@@ -46,7 +47,11 @@ from local_doc_search.indexer import (
     index_paths,
     strategy_for_path,
 )
-from local_doc_search.mcp import McpSearchServer, search_tool_definition
+from local_doc_search.mcp import (
+    McpSearchServer,
+    codex_session_search_tool_definition,
+    search_tool_definition,
+)
 from local_doc_search.search import require_vec_distance, resolve_search, search, search_many
 
 runner = CliRunner()
@@ -463,7 +468,11 @@ def test_mcp_server_lists_and_calls_search_tool(
     assert initialize is not None
     assert initialize["result"]["serverInfo"]["name"] == "local-doc-search"
     assert tools is not None
-    assert [tool["name"] for tool in tools["result"]["tools"]] == ["search", "roots"]
+    assert [tool["name"] for tool in tools["result"]["tools"]] == [
+        "search",
+        "codex_session_search",
+        "roots",
+    ]
     assert call is not None
     payload = call["result"]["content"][0]["text"]
     assert '"relative_path": "search.md"' in payload
@@ -496,14 +505,54 @@ def test_mcp_search_tool_accepts_pattern_only(
     assert '"relative_path": "travel.md"' in payload
 
 
-def test_mcp_search_tool_schema_avoids_root_composition_keywords() -> None:
-    schema = search_tool_definition()["inputSchema"]
+def test_mcp_codex_session_search_tool_uses_fixed_db(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / "codex-sessions"
+    session = root / "session.jsonl"
+    write_jsonl(session, codex_session_rows())
+    codex_db = tmp_path / "codex-history.sqlite"
+    with connect(codex_db) as con:
+        index_codex_sessions(con, roots=[root], embedder=FakeEmbedder(), rebuild=True)
+    monkeypatch.setattr(mcp_module, "CODEX_HISTORY_DB", codex_db)
 
-    assert "anyOf" not in schema
-    assert "oneOf" not in schema
-    assert "allOf" not in schema
-    assert "not" not in schema
-    assert "enum" not in schema
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    server = McpSearchServer([db], device="cpu")
+    call = server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "codex_session_search",
+                "arguments": {"pattern": "codex", "limit": 5},
+            },
+        }
+    )
+
+    assert call is not None
+    payload = call["result"]["content"][0]["text"]
+    assert '"session_id": "019de27d-91d4-7d01-a863-1b189c987846"' in payload
+    assert '"cwd": "/work/project"' in payload
+    assert '"role": "user"' in payload
+    assert '"line_no": 4' in payload
+
+
+def test_mcp_search_tool_schema_avoids_root_composition_keywords() -> None:
+    schemas = [
+        search_tool_definition()["inputSchema"],
+        codex_session_search_tool_definition()["inputSchema"],
+    ]
+
+    for schema in schemas:
+        assert "anyOf" not in schema
+        assert "oneOf" not in schema
+        assert "allOf" not in schema
+        assert "not" not in schema
+        assert "enum" not in schema
 
 
 def test_mcp_server_roots_tool(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
