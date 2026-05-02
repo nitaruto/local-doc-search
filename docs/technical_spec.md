@@ -71,6 +71,10 @@ SQLite DBには以下を保存する。
 - 単独で長すぎる段落は600文字上限で分割し、120文字overlapさせる。
 - chunkingは拡張子ごとのstrategyで選択する構造にしている。
   - `.md`, `.markdown` は `markdown-section` strategyを使い、ATX見出し (`#` から `######`) のsection境界を越えてchunkをまとめない。
+  - Markdown chunkには現在sectionの上位heading pathを検索用textのprefixとして付与する。
+    - 例: `# aaa` > `## bbb` > `### ccc` 配下の本文chunkには、`# aaa`, `## bbb`, `### ccc` を前置する。
+    - prefixは検索用textにのみ追加し、`start_offset`, `end_offset`, `start_line`, `end_line` は元本文内の位置を維持する。
+  - Markdown section内の段落packingではheading contextを優先し、通常の1段落overlapは行わない。
   - fenced code block内の見出し風行はsection境界として扱わない。
   - fenced code block (3連バッククォートまたは `~~~`) 内の本文はchunk対象から除外する。
   - `.txt`, `.rst` は `paragraph-pack` strategyを使う。

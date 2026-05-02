@@ -16,6 +16,7 @@ Packed paragraph chunks overlap by one paragraph when possible.
 Chunking is selected through extension-based strategies so format-specific splitting can be
 added without changing the indexing pipeline.
 Markdown chunks do not cross ATX heading section boundaries.
+Markdown chunks include the active parent heading path as context.
 Markdown fenced code blocks are skipped when building chunks.
 
 ## Usage

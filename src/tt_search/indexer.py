@@ -24,6 +24,13 @@ class CandidateFile:
 
 
 @dataclass(frozen=True)
+class MarkdownSection:
+    start: int
+    end: int
+    headings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class IndexedFile:
     path: Path
     root_path: Path
@@ -97,19 +104,33 @@ class MarkdownSectionStrategy:
     def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
         chunks: list[Chunk] = []
         fenced_ranges = split_fenced_code_ranges(text)
-        for section_start, section_end in split_markdown_sections(text):
+        for section in split_markdown_sections(text):
             paragraphs = split_paragraphs_in_range(
                 text,
-                section_start,
-                section_end,
+                section.start,
+                section.end,
                 skip_ranges=fenced_ranges,
             )
-            chunks.extend(chunk_paragraphs(text, paragraphs, max_chars=max_chars))
+            chunks.extend(
+                add_markdown_heading_context(
+                    chunk_paragraphs(
+                        text,
+                        paragraphs,
+                        max_chars=max_chars,
+                        overlap_paragraph=False,
+                    ),
+                    section.headings,
+                )
+            )
         return reindex_chunks(chunks)
 
 
 def chunk_paragraphs(
-    text: str, paragraphs: list[tuple[int, int, str]], *, max_chars: int = MAX_CHARS
+    text: str,
+    paragraphs: list[tuple[int, int, str]],
+    *,
+    max_chars: int = MAX_CHARS,
+    overlap_paragraph: bool = True,
 ) -> list[Chunk]:
     chunks: list[Chunk] = []
     current_parts: list[tuple[int, int, str]] = []
@@ -150,7 +171,7 @@ def chunk_paragraphs(
 
         candidate = "\n\n".join([*(part for _, _, part in current_parts), paragraph])
         if current_parts and len(candidate) > max_chars:
-            flush_current(keep_last_paragraph=True)
+            flush_current(keep_last_paragraph=overlap_paragraph)
             trim_overlap_for(paragraph)
         current_parts.append((start, end, paragraph))
 
@@ -366,12 +387,14 @@ def split_fenced_code_ranges(text: str) -> list[tuple[int, int]]:
     return ranges
 
 
-def split_markdown_sections(text: str) -> list[tuple[int, int]]:
+def split_markdown_sections(text: str) -> list[MarkdownSection]:
     if not text:
         return []
 
-    sections: list[tuple[int, int]] = []
+    sections: list[MarkdownSection] = []
     section_start = 0
+    section_headings: tuple[str, ...] = ()
+    heading_stack: list[str] = []
     offset = 0
     fence_marker: str | None = None
     for line in text.splitlines(keepends=True):
@@ -380,18 +403,65 @@ def split_markdown_sections(text: str) -> list[tuple[int, int]]:
             marker = markdown_fence_marker(stripped)
             if marker is not None:
                 fence_marker = marker
-            elif is_markdown_heading(stripped) and offset != section_start:
-                sections.append((section_start, offset))
-                section_start = offset
+            else:
+                heading = markdown_heading(stripped)
+                if heading is not None:
+                    if offset != section_start:
+                        sections.append(
+                            MarkdownSection(section_start, offset, section_headings)
+                        )
+                    level, heading_text = heading
+                    heading_stack = heading_stack[: level - 1]
+                    heading_stack.append(heading_text)
+                    section_start = offset
+                    section_headings = tuple(heading_stack)
         elif stripped.startswith(fence_marker):
             fence_marker = None
         offset += len(line)
-    sections.append((section_start, len(text)))
-    return [(start, end) for start, end in sections if start < end]
+    sections.append(MarkdownSection(section_start, len(text), section_headings))
+    return [section for section in sections if section.start < section.end]
 
 
 def is_markdown_heading(stripped_line: str) -> bool:
-    return re.match(r"^#{1,6}\s+\S", stripped_line) is not None
+    return markdown_heading(stripped_line) is not None
+
+
+def markdown_heading(stripped_line: str) -> tuple[int, str] | None:
+    match = re.match(r"^(#{1,6})\s+\S.*$", stripped_line.rstrip())
+    if match is None:
+        return None
+    return len(match.group(1)), match.group(0)
+
+
+def add_markdown_heading_context(chunks: list[Chunk], headings: tuple[str, ...]) -> list[Chunk]:
+    if not headings:
+        return chunks
+    prefix = "\n".join(headings)
+    return [replace_chunk_text(chunk, prefix, headings) for chunk in chunks]
+
+
+def replace_chunk_text(chunk: Chunk, prefix: str, headings: tuple[str, ...]) -> Chunk:
+    body = strip_leading_context_headings(chunk.text, headings)
+    text = prefix if not body else f"{prefix}\n{body}"
+    return Chunk(
+        index=chunk.index,
+        start_offset=chunk.start_offset,
+        end_offset=chunk.end_offset,
+        start_line=chunk.start_line,
+        end_line=chunk.end_line,
+        text=text,
+    )
+
+
+def strip_leading_context_headings(text: str, headings: tuple[str, ...]) -> str:
+    lines = text.splitlines()
+    index = 0
+    for heading in headings:
+        if index < len(lines) and lines[index].strip() == heading:
+            index += 1
+            while index < len(lines) and not lines[index].strip():
+                index += 1
+    return "\n".join(lines[index:]).strip()
 
 
 def markdown_fence_marker(stripped_line: str) -> str | None:

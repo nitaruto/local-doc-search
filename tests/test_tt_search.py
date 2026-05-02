@@ -847,20 +847,34 @@ def test_markdown_chunks_do_not_cross_section_boundaries() -> None:
 
     chunks = chunk_file(Path("notes.md"), text, max_chars=100)
 
-    assert [chunk.text for chunk in chunks] == ["# A\n\npara a", "# B\n\npara b"]
+    assert [chunk.text for chunk in chunks] == ["# A\npara a", "# B\npara b"]
     assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 3), (5, 7)]
 
 
-def test_markdown_paragraph_overlap_stays_inside_section() -> None:
+def test_markdown_paragraph_chunks_include_heading_without_overlap() -> None:
     text = "# A\n\naaa\n\nbbb\n\ncccc\n\n# B\n\nddd\n"
 
     chunks = chunk_file(Path("notes.md"), text, max_chars=10)
 
+    assert [chunk.text for chunk in chunks] == ["# A\naaa", "# A\nbbb\n\ncccc", "# B\nddd"]
+
+
+def test_markdown_chunks_include_parent_heading_context() -> None:
+    text = "# aaa\nA\n## bbb\nB\n### ccc\nC\n\nD\n"
+
+    chunks = chunk_file(Path("notes.md"), text, max_chars=10)
+
     assert [chunk.text for chunk in chunks] == [
-        "# A\n\naaa",
-        "aaa\n\nbbb",
-        "bbb\n\ncccc",
-        "# B\n\nddd",
+        "# aaa\nA",
+        "# aaa\n## bbb\nB",
+        "# aaa\n## bbb\n### ccc\nC",
+        "# aaa\n## bbb\n### ccc\nD",
+    ]
+    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [
+        (1, 2),
+        (3, 4),
+        (5, 6),
+        (8, 8),
     ]
 
 
@@ -870,9 +884,9 @@ def test_markdown_heading_inside_fenced_code_is_not_section_boundary() -> None:
     chunks = chunk_file(Path("notes.md"), text, max_chars=100)
 
     assert len(chunks) == 2
-    assert chunks[0].text == "# A\n\npara a"
+    assert chunks[0].text == "# A\npara a"
     assert (chunks[0].start_line, chunks[0].end_line) == (1, 7)
-    assert chunks[1].text == "# B\n\npara b"
+    assert chunks[1].text == "# B\npara b"
 
 
 def test_markdown_fenced_code_blocks_are_skipped() -> None:
@@ -880,7 +894,7 @@ def test_markdown_fenced_code_blocks_are_skipped() -> None:
 
     chunks = chunk_file(Path("notes.md"), text, max_chars=100)
 
-    assert [chunk.text for chunk in chunks] == ["# A\n\nbefore\n\nafter"]
+    assert [chunk.text for chunk in chunks] == ["# A\nbefore\n\nafter"]
     assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 9)]
     assert "skip me" not in chunks[0].text
 
