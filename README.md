@@ -107,7 +107,9 @@ uv run local-doc-search search --query "検索したい内容" --mode vec
 
 When `--db` is omitted, `search` uses the single live local server if exactly one
 is registered. If the requested `--db` set is a subset of a live server's DB set,
-that server is used and the search is limited to the requested DBs.
+that server is used and the search is limited to the requested DBs. Running servers
+detect SQLite DB updates on search requests; if embedding metadata remains compatible,
+they refresh fingerprints and continue without restarting.
 
 Run a stdio MCP server for coding agents such as Codex.
 

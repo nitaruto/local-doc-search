@@ -8,7 +8,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .db import DbFingerprint, fingerprint_many, fingerprints_match, normalize_db_paths
+from .db import DbFingerprint, normalize_db_paths
 from .search import SearchMode, SearchResult
 
 REGISTRY_DIR = Path.home() / ".cache" / "local-doc-search" / "servers"
@@ -64,12 +64,6 @@ def find_live_server(db_paths: list[Path]) -> dict[str, Any] | None:
     registry = read_registry(db_paths)
     if registry is None:
         return None
-    try:
-        current = fingerprint_many(db_paths)
-    except OSError:
-        return None
-    if not fingerprints_match(current, registry.get("fingerprints", [])):
-        return None
     if not wait_for_server_health(registry):
         return None
     return registry
@@ -95,12 +89,6 @@ def find_live_servers() -> list[dict[str, Any]]:
     for registry in read_all_registries():
         db_paths = registry_db_paths(registry)
         if not db_paths:
-            continue
-        try:
-            current = fingerprint_many(db_paths)
-        except OSError:
-            continue
-        if not fingerprints_match(current, registry.get("fingerprints", [])):
             continue
         if not wait_for_server_health(registry):
             continue

@@ -6,8 +6,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from .client import find_live_server, write_registry
-from .db import fingerprint_many, fingerprints_match, validate_embedding_compatible
+from .db import DbFingerprint
 from .embeddings import DeviceOption, create_embedding_provider
+from .reload import ReloadableDbSet
 from .search import resolve_search, search_many
 
 
@@ -15,20 +16,18 @@ class SearchServerState:
     def __init__(self, db_paths: list[Path], *, device: DeviceOption) -> None:
         self.db_paths = db_paths
         self.device = device
-        self.fingerprints = fingerprint_many(db_paths)
-        metadata = validate_embedding_compatible(self.fingerprints)
+        self.db_set = ReloadableDbSet(db_paths)
         self.embedder = create_embedding_provider(
-            model_name=metadata["embedding_model"],
+            model_name=self.db_set.embedding_metadata["embedding_model"],
             device=device,
         )
 
-    def assert_fresh(self) -> None:
-        current = fingerprint_many(self.db_paths)
-        expected = [fingerprint.__dict__ for fingerprint in self.fingerprints]
-        if not fingerprints_match(current, expected):
-            raise ValueError(
-                "DB files changed after server startup. Restart local-doc-search server."
-            )
+    @property
+    def fingerprints(self) -> list[DbFingerprint]:
+        return self.db_set.fingerprints
+
+    def refresh_if_compatible(self) -> None:
+        self.db_set.refresh_if_compatible()
 
     def resolve_requested_db_paths(self, payload: dict[str, Any]) -> list[Path]:
         requested = payload.get("db_paths")
@@ -70,7 +69,7 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
 
     def handle_search(self, payload: dict[str, Any]):
         server = cast(SearchHTTPServer, self.server)
-        server.state.assert_fresh()
+        server.state.refresh_if_compatible()
         db_paths = server.state.resolve_requested_db_paths(payload)
         mode = payload.get("mode", "fts-vec")
         if mode not in {"fts", "vec", "fts-vec", "vec-fts"}:

@@ -358,8 +358,8 @@ uv run local-doc-search codex-server --device auto
 
 `local-doc-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
 完全一致serverがない場合でも、指定DB集合が起動中serverのDB集合の部分集合であれば、そのserverへ問い合わせて対象DBだけ検索する。
-server registryが存在しfingerprintも一致する場合は、起動直後のraceを避けるため短時間 `/health` をretryする。
-serverがない、応答しない、DB fingerprintが一致しない場合はdirect検索へfallbackする。
+server registryが存在する場合は、起動直後のraceを避けるため短時間 `/health` をretryする。
+serverがない、または応答しない場合はdirect検索へfallbackする。
 `--db` なしの場合は、liveなserverが1件だけならそのserverへ問い合わせる。
 liveなserverが0件または複数件の場合は、曖昧または検索不能としてエラーにする。
 `--db` なしではdirect検索へfallbackしない。
@@ -375,12 +375,14 @@ server discovery:
 - `~/.cache/local-doc-search/servers/<db-set-hash>.json` にhost/port/DB fingerprintを保存する。
 - serverは `/health` と `/search` を提供する。
 - serverは `127.0.0.1` bindを既定とし、初期実装ではdaemon化しない。
+- registry上のfingerprintが古くてもlive serverへ問い合わせる。server側でDB更新を検出してreload判定する。
 
 注意:
 
 - server起動時にDB metadataを読み、vector系検索用のembedderを1回だけloadする。
-- indexでDBを更新した後はserver再起動を推奨する。
-- serverは検索ごとにDB fileのmtime/sizeを確認し、起動後にDBが変わっていればエラーにする。
+- serverは検索ごとにDB fileのmtime/sizeを確認し、起動後にDBが変わっていればmetadataを再読込する。
+- embedding metadataが起動時と互換ならfingerprintを更新し、embedderを維持したまま検索を続ける。
+- embedding metadataが変わり互換性が崩れた場合はserver再起動を要求する。
 - `search --device cpu` のようにserverと異なるdeviceを明示した場合、そのserverは使わずdirect検索する。
 
 ## MCP Server
@@ -408,6 +410,7 @@ cwd = "/absolute/path/to/local_search"
 - toolは `search`, `codex_session_search`, `roots`。
 - `search` toolは `--db` で指定された通常index DBを検索する。
 - `codex_session_search` toolは固定DB `~/.codex/local-doc-search/codex-history.sqlite` のCodex session履歴を検索する。
+- MCP serverもHTTP serverと同様にDB更新を検出し、embedding metadata互換ならreloadして検索を続ける。
 - `search` / `codex_session_search` toolの引数:
   - `query`: semantic/vector検索用文字列。
   - `pattern`: SQLite FTS5 `MATCH` に渡すpattern。`AND`, `OR`, `NOT`, `NEAR` などを使える。

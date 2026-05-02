@@ -28,6 +28,7 @@ from local_doc_search.db import (
     format_info,
     list_indexed_files,
     list_indexed_roots,
+    set_metadata,
     validate_embedding_compatible,
 )
 from local_doc_search.embeddings import (
@@ -57,6 +58,7 @@ from local_doc_search.mcp import (
     codex_session_search_tool_definition,
     search_tool_definition,
 )
+from local_doc_search.reload import ReloadableDbSet
 from local_doc_search.search import (
     SearchResult,
     require_vec_distance,
@@ -655,6 +657,26 @@ def test_find_live_server_retries_health(
     assert client_module.find_live_server([db]) is not None
 
 
+def test_find_live_server_allows_stale_fingerprint_for_server_reload(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, [sample_roots[0]])
+    fingerprints = fingerprint_many([db])
+    (sample_roots[0] / "new.md").write_text("更新後の文書です。\n", encoding="utf-8")
+    build_db(db, [sample_roots[0]])
+    monkeypatch.setattr(
+        client_module,
+        "read_registry",
+        lambda _: {"fingerprints": [fingerprint.__dict__ for fingerprint in fingerprints]},
+    )
+    monkeypatch.setattr(client_module, "wait_for_server_health", lambda _: True)
+
+    assert client_module.find_live_server([db]) is not None
+
+
 def test_find_subset_live_servers_matches_superset_registry(
     tmp_path: Path,
     sample_roots: tuple[Path, Path],
@@ -690,7 +712,7 @@ def test_server_search_accepts_vector_query_payload(
     state = SimpleNamespace(
         db_paths=[db],
         embedder=FakeEmbedder(),
-        assert_fresh=lambda: None,
+        refresh_if_compatible=lambda: None,
         resolve_requested_db_paths=lambda _: [db],
     )
     cast(Any, handler).server = SimpleNamespace(state=state)
@@ -719,7 +741,7 @@ def test_server_search_limits_to_requested_db_paths(
     state = SimpleNamespace(
         db_paths=[db1.resolve(), db2.resolve()],
         embedder=FakeEmbedder(),
-        assert_fresh=lambda: None,
+        refresh_if_compatible=lambda: None,
         resolve_requested_db_paths=lambda payload: [
             Path(path).resolve() for path in payload["db_paths"]
         ],
@@ -763,6 +785,37 @@ def test_run_server_rejects_duplicate_live_server(
 
     with pytest.raises(ValueError, match="already running.*127.0.0.1:12345"):
         server_module.run_server([db], host="127.0.0.1", port=0, device="cpu")
+
+
+def test_reloadable_db_set_refreshes_compatible_db_update(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, [sample_roots[0]])
+    db_set = ReloadableDbSet([db])
+    original_mtime = db_set.fingerprints[0].mtime_ns
+
+    (sample_roots[0] / "new.md").write_text("追加された検索対象です。\n", encoding="utf-8")
+    build_db(db, [sample_roots[0]])
+
+    assert db_set.refresh_if_compatible() is True
+    assert db_set.fingerprints[0].mtime_ns != original_mtime
+
+
+def test_reloadable_db_set_rejects_embedding_metadata_change(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, [sample_roots[0]])
+    db_set = ReloadableDbSet([db])
+
+    with connect(db) as con:
+        set_metadata(con, "embedding_model", "other-model")
+
+    with pytest.raises(ValueError, match="embedding metadata changed"):
+        db_set.refresh_if_compatible()
 
 
 def test_mcp_server_lists_and_calls_search_tool(
@@ -826,6 +879,35 @@ def test_mcp_search_tool_accepts_pattern_only(
     payload = call["result"]["content"][0]["text"]
     assert '"relative_path": "search.md"' in payload
     assert '"relative_path": "travel.md"' in payload
+
+
+def test_mcp_search_refreshes_compatible_db_update(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, [sample_roots[0]])
+    server = McpSearchServer([db], device="cpu")
+    original_mtime = server._db_set.fingerprints[0].mtime_ns
+    (sample_roots[0] / "new.md").write_text("追加された検索対象です。\n", encoding="utf-8")
+    build_db(db, [sample_roots[0]])
+
+    call = server.handle_message(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "search",
+                "arguments": {"pattern": "検索対象", "mode": "fts", "limit": 5},
+            },
+        }
+    )
+
+    assert call is not None
+    payload = call["result"]["content"][0]["text"]
+    assert '"relative_path": "new.md"' in payload
+    assert server._db_set.fingerprints[0].mtime_ns != original_mtime
 
 
 def test_mcp_codex_session_search_tool_uses_fixed_db(

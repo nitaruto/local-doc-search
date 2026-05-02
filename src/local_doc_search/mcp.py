@@ -10,13 +10,12 @@ from .codex_history import CODEX_HISTORY_DB, CODEX_HISTORY_INDEX_KIND
 from .db import (
     as_json,
     connect,
-    fingerprint_many,
     get_metadata,
     list_indexed_roots,
     normalize_db_paths,
-    validate_embedding_compatible,
 )
 from .embeddings import DeviceOption, EmbeddingProvider, create_embedding_provider
+from .reload import ReloadableDbSet
 from .search import SearchMode, SearchResult, resolve_search, search_many
 
 MCP_PROTOCOL_VERSION = "2024-11-05"
@@ -29,6 +28,8 @@ class McpSearchServer:
         if not self.db_paths:
             raise ValueError("At least one --db is required")
         self.device: DeviceOption = device
+        self._db_set = ReloadableDbSet(self.db_paths)
+        self._codex_db_set: ReloadableDbSet | None = None
         self._embedder: EmbeddingProvider | None = None
         self._codex_embedder: EmbeddingProvider | None = None
 
@@ -137,6 +138,7 @@ class McpSearchServer:
         limit = int(arguments.get("limit", 10))
         candidates = max(int(arguments.get("candidates", 50)), limit)
         explain = bool(arguments.get("explain", False))
+        self.reload_db_paths(db_paths)
         embedder = embedder_factory(resolved.mode)
         rows = search_many(
             db_paths,
@@ -151,6 +153,7 @@ class McpSearchServer:
         return [result_to_mcp_dict(row, explain=explain) for row in rows]
 
     def roots(self) -> list[dict[str, Any]]:
+        self._db_set.refresh_if_compatible()
         results: list[dict[str, Any]] = []
         for db_path in self.db_paths:
             with connect(db_path) as con:
@@ -178,15 +181,28 @@ class McpSearchServer:
         return self._codex_embedder
 
     def create_embedder_for_paths(self, db_paths: list[Path]) -> EmbeddingProvider:
-        fingerprints = fingerprint_many(db_paths)
-        metadata = validate_embedding_compatible(fingerprints)
-        model = metadata.get("embedding_model")
+        db_set = self.db_set_for_paths(db_paths)
+        model = db_set.embedding_metadata.get("embedding_model")
         if model is None:
             raise ValueError(
                 "DB does not contain embedding metadata. "
                 "Rebuild it with `local-doc-search index`."
             )
         return create_embedding_provider(model_name=model, device=self.device)
+
+    def reload_db_paths(self, db_paths: list[Path]) -> None:
+        self.db_set_for_paths(db_paths).refresh_if_compatible()
+
+    def db_set_for_paths(self, db_paths: list[Path]) -> ReloadableDbSet:
+        normalized = normalize_db_paths(db_paths)
+        if normalized == self.db_paths:
+            return self._db_set
+        codex_db = CODEX_HISTORY_DB.expanduser().resolve()
+        if normalized == [codex_db]:
+            if self._codex_db_set is None:
+                self._codex_db_set = ReloadableDbSet(normalized)
+            return self._codex_db_set
+        return ReloadableDbSet(normalized)
 
 
 def run_mcp_server(db_paths: list[Path], *, device: DeviceOption = "auto") -> None:
