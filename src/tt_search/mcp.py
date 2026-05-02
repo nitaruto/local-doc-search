@@ -170,8 +170,9 @@ def search_tool_definition() -> dict[str, Any]:
                     "type": "string",
                     "enum": sorted(SEARCH_MODES),
                     "description": (
-                        "Search mode. Defaults to vec for query, fts for pattern, "
-                        "and vec-fts for both."
+                        "When both query and pattern are provided, vec-fts gets vector "
+                        "candidates with query then reranks/filters with pattern; "
+                        "fts-vec gets FTS candidates with pattern then reranks with query."
                     ),
                 },
                 "limit": {
