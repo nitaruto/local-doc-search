@@ -151,7 +151,9 @@ def run_mcp_server(db_paths: list[Path], *, device: DeviceOption = "auto") -> No
 def search_tool_definition() -> dict[str, Any]:
     return {
         "name": "search",
-        "description": "Search local tt-search SQLite indexes.",
+        "description": (
+            "Search local tt-search SQLite indexes. Provide query, pattern, or both."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {
