@@ -160,6 +160,11 @@ def index_codex_sessions(
     chunk_count = 0
 
     for path in paths:
+        if is_codex_file_unchanged_by_stat(con, path, roots):
+            skipped_files += 1
+            if progress is not None:
+                progress.on_file_done(path=path, status="unchanged")
+            continue
         indexed, chunks = codex_indexed_file(path, roots)
         if indexed is None:
             skipped_files += 1
@@ -185,6 +190,31 @@ def index_codex_sessions(
         skipped_files=skipped_files,
         chunks=chunk_count,
         removed_files=removed,
+    )
+
+
+def is_codex_file_unchanged_by_stat(
+    con: sqlite3.Connection,
+    path: Path,
+    roots: list[Path],
+) -> bool:
+    root_path = matching_root(path, roots)
+    relative_path = path.relative_to(root_path) if root_path is not None else Path(path.name)
+    stat = path.stat()
+    row = con.execute(
+        """
+        SELECT root_path, relative_path, size, mtime_ns
+        FROM files
+        WHERE path = ?
+        """,
+        (str(path),),
+    ).fetchone()
+    return (
+        row is not None
+        and row["root_path"] == str(root_path or path.parent)
+        and row["relative_path"] == str(relative_path)
+        and row["size"] == stat.st_size
+        and row["mtime_ns"] == stat.st_mtime_ns
     )
 
 

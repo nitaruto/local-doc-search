@@ -19,6 +19,7 @@ from local_doc_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
     codex_indexed_file,
     index_codex_sessions,
+    is_codex_file_unchanged_by_stat,
     parse_codex_session_file,
 )
 from local_doc_search.db import (
@@ -1227,6 +1228,22 @@ def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
     assert {result.cwd for result in results} == {"/work/project"}
     assert {Path(result.session_path or "").name for result in results} == {"rollout-test.jsonl"}
     assert {result.line_no for result in results} == {4, 6}
+
+
+def test_codex_index_fast_skips_unchanged_files(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+
+    with connect(db) as con:
+        first = index_codex_sessions(con, roots=[root], embedder=FakeEmbedder(), rebuild=True)
+        assert first.indexed_files == 1
+        assert is_codex_file_unchanged_by_stat(con, session.resolve(), [root]) is True
+        second = index_codex_sessions(con, roots=[root], embedder=FakeEmbedder())
+
+    assert second.indexed_files == 0
+    assert second.skipped_files == 1
 
 
 def test_codex_indexed_file_splits_long_turns(tmp_path: Path) -> None:
