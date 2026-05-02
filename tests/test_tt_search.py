@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -7,6 +8,11 @@ import pytest
 from typer.testing import CliRunner
 
 from tt_search import cli
+from tt_search.codex_history import (
+    CODEX_HISTORY_INDEX_KIND,
+    index_codex_sessions,
+    parse_codex_session_file,
+)
 from tt_search.db import (
     connect,
     ensure_schema,
@@ -123,6 +129,71 @@ def sample_roots(tmp_path: Path) -> tuple[Path, Path]:
 def build_db(db: Path, roots: list[Path], extensions: list[str] | None = None) -> None:
     with connect(db) as con:
         index_paths(con, roots=roots, extensions=extensions, embedder=FakeEmbedder())
+
+
+def write_jsonl(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + "\n",
+        encoding="utf-8",
+    )
+
+
+def codex_session_rows(*, source: object = "vscode") -> list[dict[str, object]]:
+    return [
+        {
+            "timestamp": "2026-05-02T00:00:00Z",
+            "type": "session_meta",
+            "payload": {
+                "id": "019de27d-91d4-7d01-a863-1b189c987846",
+                "cwd": "/work/project",
+                "source": source,
+            },
+        },
+        {
+            "timestamp": "2026-05-02T00:00:01Z",
+            "type": "event_msg",
+            "payload": {"type": "task_started", "turn_id": "turn-1"},
+        },
+        {
+            "timestamp": "2026-05-02T00:00:02Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "# AGENTS.md instructions\nskip"}],
+            },
+        },
+        {
+            "timestamp": "2026-05-02T00:00:03Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "codex履歴を検索して"}],
+            },
+        },
+        {
+            "timestamp": "2026-05-02T00:00:04Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "phase": "commentary",
+                "content": [{"type": "output_text", "text": "途中経過です"}],
+            },
+        },
+        {
+            "timestamp": "2026-05-02T00:00:05Z",
+            "type": "response_item",
+            "payload": {
+                "type": "message",
+                "role": "assistant",
+                "phase": "final_answer",
+                "content": [{"type": "output_text", "text": "検索できます"}],
+            },
+        },
+    ]
 
 
 def test_index_multiple_roots_and_extension_filter(
@@ -470,6 +541,63 @@ def test_chunk_session_metadata_is_searchable(tmp_path: Path) -> None:
     assert results[0].turn_id == "turn-1"
     assert results[0].timestamp == "2026-05-02T00:00:00Z"
     assert results[0].session_path == "/Users/me/.codex/sessions/session.jsonl"
+
+
+def test_parse_codex_session_file_extracts_user_and_final_answer(tmp_path: Path) -> None:
+    session = tmp_path / "sessions" / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+
+    turns = parse_codex_session_file(session)
+
+    assert [(turn.role, turn.text) for turn in turns] == [
+        ("user", "codex履歴を検索して"),
+        ("assistant", "検索できます"),
+    ]
+    assert {turn.session_id for turn in turns} == {"019de27d-91d4-7d01-a863-1b189c987846"}
+    assert {turn.cwd for turn in turns} == {"/work/project"}
+    assert {turn.turn_id for turn in turns} == {"turn-1"}
+
+
+def test_parse_codex_session_file_skips_subagent_sessions(tmp_path: Path) -> None:
+    session = tmp_path / "sessions" / "rollout-subagent.jsonl"
+    write_jsonl(session, codex_session_rows(source={"subagent": {"other": "guardian"}}))
+
+    assert parse_codex_session_file(session) == []
+
+
+def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+
+    with connect(db) as con:
+        stats = index_codex_sessions(
+            con,
+            roots=[root],
+            embedder=FakeEmbedder(),
+            rebuild=True,
+        )
+        metadata = format_info(con)["metadata"]
+        results = search(
+            con,
+            query="検索",
+            mode="fts",
+            limit=10,
+            candidates=10,
+            embedder=None,
+        )
+
+    assert stats.indexed_files == 1
+    assert stats.chunks == 2
+    assert metadata["index_kind"] == CODEX_HISTORY_INDEX_KIND
+    assert sorted((result.role, result.text) for result in results) == [
+        ("assistant", "検索できます"),
+        ("user", "codex履歴を検索して"),
+    ]
+    assert {result.session_id for result in results} == {"019de27d-91d4-7d01-a863-1b189c987846"}
+    assert {result.cwd for result in results} == {"/work/project"}
+    assert {Path(result.session_path or "").name for result in results} == {"rollout-test.jsonl"}
 
 
 def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:
