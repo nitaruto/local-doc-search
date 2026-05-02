@@ -2,7 +2,7 @@
 
 ## 概要
 
-`local-doc-search` は、日本語を含むローカルテキストファイルを検索するCLI。
+`local-doc-search` は、多言語のローカルテキストファイルを検索するCLI。
 SQLiteを永続ストアとして使い、FTS5 trigramによる文字列検索とsqlite-vecによるベクトル検索を組み合わせる。
 
 主なコマンド:

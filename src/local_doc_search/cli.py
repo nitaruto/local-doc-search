@@ -48,7 +48,7 @@ from .mcp import run_mcp_server
 from .search import SearchMode, resolve_search, search_many
 from .server import run_server
 
-app = typer.Typer(help="Local Japanese text search with SQLite FTS5 trigram and sqlite-vec.")
+app = typer.Typer(help="Local multilingual text search with SQLite FTS5 trigram and sqlite-vec.")
 console = Console()
 
 

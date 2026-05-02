@@ -1,6 +1,6 @@
 # local-doc-search
 
-`local-doc-search` is a local CLI for Japanese text search.
+`local-doc-search` is a local CLI for multilingual text search.
 
 It builds a SQLite database from files under one or more directories and combines:
 

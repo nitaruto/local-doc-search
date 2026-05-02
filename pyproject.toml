@@ -1,7 +1,7 @@
 [project]
 name = "local-doc-search"
 version = "0.1.0"
-description = "Local Japanese text search CLI using SQLite FTS5 trigram and sqlite-vec."
+description = "Local multilingual text search CLI using SQLite FTS5 trigram and sqlite-vec."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
