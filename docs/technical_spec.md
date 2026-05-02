@@ -1,20 +1,20 @@
-# tt-search 技術仕様
+# local-doc-search 技術仕様
 
 ## 概要
 
-`tt-search` は、日本語を含むローカルテキストファイルを検索するCLI。
+`local-doc-search` は、日本語を含むローカルテキストファイルを検索するCLI。
 SQLiteを永続ストアとして使い、FTS5 trigramによる文字列検索とsqlite-vecによるベクトル検索を組み合わせる。
 
 主なコマンド:
 
-- `tt-search index`: 指定root配下のファイルをSQLite DBへindexする。
-- `tt-search search`: FTS/vec/hybrid検索を実行する。
-- `tt-search info`: DB metadataと件数を表示する。
-- `tt-search files`: DBにindex済みのファイル一覧を表示する。
-- `tt-search server`: ローカル検索serverを起動し、queryごとのモデルロードを避ける。
-- `tt-search codex-index`: Codex session履歴を固定DBへindexする。
-- `tt-search codex-search`: Codex session履歴の固定DBを検索する。
-- `tt-search codex-server`: Codex session履歴の固定DB用serverを起動する。
+- `local-doc-search index`: 指定root配下のファイルをSQLite DBへindexする。
+- `local-doc-search search`: FTS/vec/hybrid検索を実行する。
+- `local-doc-search info`: DB metadataと件数を表示する。
+- `local-doc-search files`: DBにindex済みのファイル一覧を表示する。
+- `local-doc-search server`: ローカル検索serverを起動し、queryごとのモデルロードを避ける。
+- `local-doc-search codex-index`: Codex session履歴を固定DBへindexする。
+- `local-doc-search codex-search`: Codex session履歴の固定DBを検索する。
+- `local-doc-search codex-server`: Codex session履歴の固定DB用serverを起動する。
 
 パッケージ管理と実行は `uv` を前提にする。
 
@@ -53,7 +53,7 @@ SQLite DBには以下を保存する。
 
 ## Indexing
 
-`tt-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...] [--exclude REGEX ...]` でindexする。
+`local-doc-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...] [--exclude REGEX ...]` でindexする。
 
 処理内容:
 
@@ -87,7 +87,7 @@ SQLite DBには以下を保存する。
 exclude例:
 
 ```bash
-uv run tt-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --exclude '\.tmp\.md$'
+uv run local-doc-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --exclude '\.tmp\.md$'
 ```
 
 ## 差分更新
@@ -139,7 +139,7 @@ search時:
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
 - `sbintuitions/sarashina-embedding-v2-*`: query=`task: 質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。\nquery: `, passage=`text: `
-- `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためtt-search側では付与しない。
+- `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためlocal-doc-search側では付与しない。
 
 推奨:
 
@@ -165,16 +165,16 @@ search時:
 利用例:
 
 ```bash
-uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
-uv run tt-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
-uv run tt-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
-uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
+uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```
 
 ## Search Modes
 
-`tt-search search --db A.sqlite [--db B.sqlite...] --mode` は以下に対応する。
+`local-doc-search search --db A.sqlite [--db B.sqlite...] --mode` は以下に対応する。
 
 - `fts`
   - FTS5 trigramだけで検索する。
@@ -210,9 +210,9 @@ hybrid時の入力:
 
 ## Codex History Search
 
-`tt-search codex-index` はCodex session履歴を専用DBへindexする。
+`local-doc-search codex-index` はCodex session履歴を専用DBへindexする。
 
-- 固定DB pathは `~/.codex/tt-search/codex-history.sqlite`。
+- 固定DB pathは `~/.codex/local-doc-search/codex-history.sqlite`。
 - 既定の入力rootは `~/.codex/sessions`。
 - 既定モデルは `cl-nagoya/ruri-v3-310m`。
 - `--root` で別のsession rootまたは `.jsonl` ファイルを指定できる。
@@ -233,7 +233,7 @@ hybrid時の入力:
   - 分割後chunkにも同じ `session_id`, `cwd`, `role`, `turn_id`, `timestamp`, `session_path`, `line_no` を付与する。
   - `start_offset`, `end_offset`, `start_line`, `end_line` は元turn text内の位置を表す。
 
-`tt-search codex-search` は固定DBを検索する。
+`local-doc-search codex-search` は固定DBを検索する。
 
 - `--db` と `--model` は指定しない。
 - vector系検索では固定DB metadataの `embedding_model` を使う。
@@ -242,11 +242,11 @@ hybrid時の入力:
 利用例:
 
 ```bash
-uv run tt-search codex-index --rebuild
-uv run tt-search codex-server --device auto
-uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
-uv run tt-search codex-search --pattern "実装 OR エラー"
-uv run tt-search codex-search --query "以前相談した内容" --json
+uv run local-doc-search codex-index --rebuild
+uv run local-doc-search codex-server --device auto
+uv run local-doc-search codex-search --query "以前相談した内容" --mode fts-vec
+uv run local-doc-search codex-search --pattern "実装 OR エラー"
+uv run local-doc-search codex-search --query "以前相談した内容" --json
 ```
 
 ## Output
@@ -269,7 +269,7 @@ uv run tt-search codex-search --query "以前相談した内容" --json
 
 ## Indexed File Listing
 
-`tt-search files --db notes.sqlite` は、DBの `files` テーブルに保存されているindex済みファイル一覧を表示する。
+`local-doc-search files --db notes.sqlite` は、DBの `files` テーブルに保存されているindex済みファイル一覧を表示する。
 
 通常出力は、terminal幅に合わせたtableではなく、1 file 1 lineの `key=value` 形式で出力する。
 path系の値は空白を含む場合に備えてshell風にquoteする。
@@ -288,10 +288,10 @@ path系の値は空白を含む場合に備えてshell風にquoteする。
 
 ## Multi DB Search
 
-`tt-search search` は `--db` を複数指定できる。
+`local-doc-search search` は `--db` を複数指定できる。
 
 ```bash
-uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索語" --mode fts-vec
+uv run local-doc-search search --db notes.sqlite --db work.sqlite --query "検索語" --mode fts-vec
 ```
 
 挙動:
@@ -316,34 +316,34 @@ vector系検索で一致が必要なmetadata:
 
 ## Server Mode
 
-`tt-search server` はローカルHTTP serverをforegroundで起動する。
+`local-doc-search server` はローカルHTTP serverをforegroundで起動する。
 
 ```bash
-uv run tt-search server --db notes.sqlite --db work.sqlite --device auto
+uv run local-doc-search server --db notes.sqlite --db work.sqlite --device auto
 ```
 
-`tt-search codex-server` はCodex履歴固定DB用のserverをforegroundで起動する。
+`local-doc-search codex-server` はCodex履歴固定DB用のserverをforegroundで起動する。
 
-- 固定DB pathは `~/.codex/tt-search/codex-history.sqlite`。
+- 固定DB pathは `~/.codex/local-doc-search/codex-history.sqlite`。
 - `--db` は指定しない。
 - `--device`, `--host`, `--port` は通常serverと同様に使える。
 - 起動前に `index_kind=codex-history` のDBであることを検証する。
 
 ```bash
-uv run tt-search codex-server --device auto
+uv run local-doc-search codex-server --device auto
 ```
 
-`tt-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
+`local-doc-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
 serverがない、応答しない、DB fingerprintが一致しない場合はdirect検索へfallbackする。
 
 ```bash
-uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索語" --mode fts-vec
-uv run tt-search search --db notes.sqlite --query "検索語" --mode vec --no-server
+uv run local-doc-search search --db notes.sqlite --db work.sqlite --query "検索語" --mode fts-vec
+uv run local-doc-search search --db notes.sqlite --query "検索語" --mode vec --no-server
 ```
 
 server discovery:
 
-- `~/.cache/tt-search/servers/<db-set-hash>.json` にhost/port/DB fingerprintを保存する。
+- `~/.cache/local-doc-search/servers/<db-set-hash>.json` にhost/port/DB fingerprintを保存する。
 - serverは `/health` と `/search` を提供する。
 - serverは `127.0.0.1` bindを既定とし、初期実装ではdaemon化しない。
 
@@ -356,18 +356,18 @@ server discovery:
 
 ## MCP Server
 
-`tt-search mcp` はCodexなどのコーディングエージェント向けのstdio MCP serverとして起動する。
+`local-doc-search mcp` はCodexなどのコーディングエージェント向けのstdio MCP serverとして起動する。
 
 ```bash
-uv run tt-search mcp --db notes.sqlite --device auto
+uv run local-doc-search mcp --db notes.sqlite --device auto
 ```
 
 Codex設定例:
 
 ```toml
-[mcp_servers.tt-search]
+[mcp_servers.local-doc-search]
 command = "uv"
-args = ["run", "tt-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
 cwd = "/absolute/path/to/local_search"
 ```
 

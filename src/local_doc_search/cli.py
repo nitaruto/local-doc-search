@@ -206,7 +206,7 @@ def search_cmd(
         bool, typer.Option("--json", help="Print JSON instead of a table.")
     ] = False,
     no_server: Annotated[
-        bool, typer.Option("--no-server", help="Do not use a running tt-search server.")
+        bool, typer.Option("--no-server", help="Do not use a running local-doc-search server.")
     ] = False,
 ) -> None:
     """Search indexed files."""
@@ -334,7 +334,7 @@ def codex_search_cmd(
         bool, typer.Option("--json", help="Print JSON instead of a table.")
     ] = False,
     no_server: Annotated[
-        bool, typer.Option("--no-server", help="Do not use a running tt-search server.")
+        bool, typer.Option("--no-server", help="Do not use a running local-doc-search server.")
     ] = False,
 ) -> None:
     """Search the fixed Codex history search database."""
@@ -434,7 +434,7 @@ def build_search_embedder(
     model = metadata.get("embedding_model")
     if model is None:
         raise typer.BadParameter(
-            "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
+            "DB does not contain embedding metadata. Rebuild it with `local-doc-search index`."
         )
     return create_embedding_provider(model_name=model, device=device)
 
@@ -460,13 +460,14 @@ def server_device_matches(registry: dict[str, object], device: DeviceOption) -> 
 def validate_codex_history_db(db_path: Path) -> None:
     if not db_path.exists():
         raise typer.BadParameter(
-            f"Codex history DB does not exist: {db_path}. Run `tt-search codex-index` first."
+            f"Codex history DB does not exist: {db_path}. Run `local-doc-search codex-index` first."
         )
     with connect(db_path) as con:
         index_kind = get_metadata(con, "index_kind")
     if index_kind != CODEX_HISTORY_INDEX_KIND:
         raise typer.BadParameter(
-            f"DB is not a Codex history index: {db_path}. Run `tt-search codex-index --rebuild`."
+            f"DB is not a Codex history index: {db_path}. "
+            "Run `local-doc-search codex-index --rebuild`."
         )
 
 

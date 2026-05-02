@@ -8,14 +8,14 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from tt_search import cli
-from tt_search.codex_history import (
+from local_doc_search import cli
+from local_doc_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
     codex_indexed_file,
     index_codex_sessions,
     parse_codex_session_file,
 )
-from tt_search.db import (
+from local_doc_search.db import (
     connect,
     ensure_schema,
     fingerprint_many,
@@ -24,7 +24,7 @@ from tt_search.db import (
     list_indexed_roots,
     validate_embedding_compatible,
 )
-from tt_search.embeddings import (
+from local_doc_search.embeddings import (
     PLAMO_BACKEND,
     PLAMO_MODEL,
     PlamoEmbeddingProvider,
@@ -38,7 +38,7 @@ from tt_search.embeddings import (
     resolve_device,
     tensor_to_vectors,
 )
-from tt_search.indexer import (
+from local_doc_search.indexer import (
     MarkdownSectionStrategy,
     ParagraphPackingStrategy,
     chunk_file,
@@ -46,8 +46,8 @@ from tt_search.indexer import (
     index_paths,
     strategy_for_path,
 )
-from tt_search.mcp import McpSearchServer, search_tool_definition
-from tt_search.search import require_vec_distance, resolve_search, search, search_many
+from local_doc_search.mcp import McpSearchServer, search_tool_definition
+from local_doc_search.search import require_vec_distance, resolve_search, search, search_many
 
 runner = CliRunner()
 
@@ -461,7 +461,7 @@ def test_mcp_server_lists_and_calls_search_tool(
     )
 
     assert initialize is not None
-    assert initialize["result"]["serverInfo"]["name"] == "tt-search"
+    assert initialize["result"]["serverInfo"]["name"] == "local-doc-search"
     assert tools is not None
     assert [tool["name"] for tool in tools["result"]["tools"]] == ["search", "roots"]
     assert call is not None
@@ -1055,11 +1055,11 @@ def test_embedding_metadata_is_saved(tmp_path: Path, sample_roots: tuple[Path, P
 
 
 def test_device_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: True)
+    monkeypatch.setattr("local_doc_search.embeddings.mps_is_available", lambda: True)
     assert resolve_device("auto") == "mps"
     assert resolve_device("mps") == "mps"
 
-    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: False)
+    monkeypatch.setattr("local_doc_search.embeddings.mps_is_available", lambda: False)
     assert resolve_device("auto") == "cpu"
     with pytest.raises(ValueError):
         resolve_device("mps")
@@ -1177,7 +1177,7 @@ def test_plamo_auto_uses_mps_when_available(monkeypatch: pytest.MonkeyPatch) -> 
 
             return np.array([[3.0, 4.0, 0.0] for _ in texts], dtype=np.float32)
 
-    monkeypatch.setattr("tt_search.embeddings.mps_is_available", lambda: True)
+    monkeypatch.setattr("local_doc_search.embeddings.mps_is_available", lambda: True)
     monkeypatch.setattr(
         AutoTokenizer,
         "from_pretrained",

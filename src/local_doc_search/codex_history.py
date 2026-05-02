@@ -24,7 +24,7 @@ from .indexer import (
 
 CODEX_HISTORY_INDEX_KIND = "codex-history"
 CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
-CODEX_HISTORY_DB = Path.home() / ".codex" / "tt-search" / "codex-history.sqlite"
+CODEX_HISTORY_DB = Path.home() / ".codex" / "local-doc-search" / "codex-history.sqlite"
 CODEX_HISTORY_MODEL = "cl-nagoya/ruri-v3-310m"
 CODEX_TURN_MAX_CHARS = MAX_CHARS
 

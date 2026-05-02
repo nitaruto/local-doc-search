@@ -535,7 +535,7 @@ def require_vec_distance(value: object) -> float:
     if value is None:
         raise ValueError(
             "sqlite-vec returned NULL distance. The DB may contain non-finite embeddings; "
-            "rebuild it with `tt-search index --rebuild`."
+            "rebuild it with `local-doc-search index --rebuild`."
         )
     return float(value)
 

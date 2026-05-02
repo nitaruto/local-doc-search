@@ -1,6 +1,6 @@
-# tt-search
+# local-doc-search
 
-`tt-search` is a local CLI for Japanese text search.
+`local-doc-search` is a local CLI for Japanese text search.
 
 It builds a SQLite database from files under one or more directories and combines:
 
@@ -22,19 +22,19 @@ Markdown fenced code blocks are skipped when building chunks.
 ## Usage
 
 ```bash
-uv run tt-search index --db notes.sqlite --root ~/notes --ext .md --ext .txt
-uv run tt-search search --db notes.sqlite --query "検索したい内容"
-uv run tt-search search --db notes.sqlite --pattern "検索 OR sqlite"
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --pattern "sqlite OR fts" --mode vec-fts --explain
-uv run tt-search info --db notes.sqlite
-uv run tt-search files --db notes.sqlite
-uv run tt-search files --db notes.sqlite --json
+uv run local-doc-search index --db notes.sqlite --root ~/notes --ext .md --ext .txt
+uv run local-doc-search search --db notes.sqlite --query "検索したい内容"
+uv run local-doc-search search --db notes.sqlite --pattern "検索 OR sqlite"
+uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --pattern "sqlite OR fts" --mode vec-fts --explain
+uv run local-doc-search info --db notes.sqlite
+uv run local-doc-search files --db notes.sqlite
+uv run local-doc-search files --db notes.sqlite --json
 ```
 
 Exclude files by root-relative POSIX path regex:
 
 ```bash
-uv run tt-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --exclude '\.tmp\.md$'
+uv run local-doc-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --exclude '\.tmp\.md$'
 ```
 
 The default embedding model is `intfloat/multilingual-e5-small`.
@@ -53,17 +53,17 @@ Search output also includes chunk line ranges so other agents can locate the hit
 use FTS5 operators such as `AND`, `OR`, `NOT`, and `NEAR`. If `--mode` is omitted, query-only
 search defaults to `vec`, pattern-only search defaults to `fts`, and query+pattern defaults
 to `vec-fts`.
-`tt-search files` lists the files currently stored in the SQLite index, including `path`,
+`local-doc-search files` lists the files currently stored in the SQLite index, including `path`,
 `root_path`, `relative_path`, `size`, `mtime_ns`, and `content_hash`.
 Without `--json`, it prints one indexed file per line as `key=value` fields.
 
 Apple Silicon Metal acceleration can be selected with `--device`.
 
 ```bash
-uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
-uv run tt-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
-uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
+uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```
 
 `--device auto` uses MPS when PyTorch MPS is available and falls back to CPU otherwise.
@@ -71,48 +71,48 @@ uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode
 Multiple compatible DBs can be searched together.
 
 ```bash
-uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索したい内容" --mode fts-vec
+uv run local-doc-search search --db notes.sqlite --db work.sqlite --query "検索したい内容" --mode fts-vec
 ```
 
 Index and search Codex session history. The database is fixed at
-`~/.codex/tt-search/codex-history.sqlite`, so `--db` is not required.
+`~/.codex/local-doc-search/codex-history.sqlite`, so `--db` is not required.
 `codex-index` reads `~/.codex/sessions` by default and uses
 `cl-nagoya/ruri-v3-310m` unless `--model` is specified. Results include
 the source session path and JSONL line number for the indexed turn. Very long
 turns are split before embedding to keep sequence length bounded.
 
 ```bash
-uv run tt-search codex-index --rebuild
-uv run tt-search codex-server --device auto
-uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
-uv run tt-search codex-search --pattern "実装 OR エラー"
-uv run tt-search codex-search --query "以前相談した内容" --json
+uv run local-doc-search codex-index --rebuild
+uv run local-doc-search codex-server --device auto
+uv run local-doc-search codex-search --query "以前相談した内容" --mode fts-vec
+uv run local-doc-search codex-search --pattern "実装 OR エラー"
+uv run local-doc-search codex-search --query "以前相談した内容" --json
 ```
 
 Run a local server to avoid loading the embedding model for every query.
 
 ```bash
-uv run tt-search server --db notes.sqlite --device auto
-uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec
+uv run local-doc-search server --db notes.sqlite --device auto
+uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec
 ```
 
 Run a stdio MCP server for coding agents such as Codex.
 
 ```bash
-uv run tt-search mcp --db notes.sqlite --device auto
+uv run local-doc-search mcp --db notes.sqlite --device auto
 ```
 
 Example Codex MCP configuration:
 
 ```toml
-[mcp_servers.tt-search]
+[mcp_servers.local-doc-search]
 command = "uv"
-args = ["run", "tt-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
 cwd = "/absolute/path/to/local_search"
 ```
 
 The MCP server exposes:
 
-- `search`: search indexed text with arguments matching `tt-search search`: `query`, `mode`,
+- `search`: search indexed text with arguments matching `local-doc-search search`: `query`, `mode`,
   `limit`, `candidates`, and `explain`.
 - `roots`: list the indexed root directories for the DBs configured with `--db`.

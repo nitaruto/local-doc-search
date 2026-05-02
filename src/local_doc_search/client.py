@@ -10,7 +10,7 @@ from typing import Any
 from .db import DbFingerprint, fingerprint_many, fingerprints_match, normalize_db_paths
 from .search import SearchMode, SearchResult
 
-REGISTRY_DIR = Path.home() / ".cache" / "tt-search" / "servers"
+REGISTRY_DIR = Path.home() / ".cache" / "local-doc-search" / "servers"
 
 
 class ServerSearchError(RuntimeError):
@@ -115,5 +115,7 @@ def search_via_server(
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
-        raise ServerSearchError(f"tt-search server returned HTTP {exc.code}: {body}") from exc
+        raise ServerSearchError(
+            f"local-doc-search server returned HTTP {exc.code}: {body}"
+        ) from exc
     return [SearchResult(**item) for item in payload["results"]]

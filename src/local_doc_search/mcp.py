@@ -63,7 +63,7 @@ class McpSearchServer:
         return {
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "tt-search", "version": "0.1.0"},
+            "serverInfo": {"name": "local-doc-search", "version": "0.1.0"},
         }
 
     def handle_tool_call(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -138,7 +138,8 @@ class McpSearchServer:
             model = metadata.get("embedding_model")
             if model is None:
                 raise ValueError(
-                    "DB does not contain embedding metadata. Rebuild it with `tt-search index`."
+                    "DB does not contain embedding metadata. "
+                    "Rebuild it with `local-doc-search index`."
                 )
             self._embedder = create_embedding_provider(model_name=model, device=self.device)
         return self._embedder
@@ -152,7 +153,7 @@ def search_tool_definition() -> dict[str, Any]:
     return {
         "name": "search",
         "description": (
-            "Search local tt-search SQLite indexes. Provide query, pattern, or both."
+            "Search local-doc-search SQLite indexes. Provide query, pattern, or both."
         ),
         "inputSchema": {
             "type": "object",

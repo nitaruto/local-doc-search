@@ -26,7 +26,9 @@ class SearchServerState:
         current = fingerprint_many(self.db_paths)
         expected = [fingerprint.__dict__ for fingerprint in self.fingerprints]
         if not fingerprints_match(current, expected):
-            raise ValueError("DB files changed after server startup. Restart tt-search server.")
+            raise ValueError(
+                "DB files changed after server startup. Restart local-doc-search server."
+            )
 
 
 class SearchRequestHandler(BaseHTTPRequestHandler):
@@ -129,7 +131,7 @@ def run_server(db_paths: list[Path], *, host: str, port: int, device: DeviceOpti
         device=state.embedder.device,
         fingerprints=state.fingerprints,
     )
-    print(f"tt-search server listening on http://{actual_host}:{actual_port}")
+    print(f"local-doc-search server listening on http://{actual_host}:{actual_port}")
     print("Press Ctrl-C to stop.")
     try:
         httpd.serve_forever()
