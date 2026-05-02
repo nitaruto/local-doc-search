@@ -84,12 +84,14 @@ class MarkdownSectionStrategy:
 
     def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
         chunks: list[Chunk] = []
+        fenced_ranges = split_fenced_code_ranges(text)
         for section_start, section_end in split_markdown_sections(text):
-            section_text = text[section_start:section_end]
-            paragraphs = [
-                (section_start + start, section_start + end, paragraph)
-                for start, end, paragraph in split_paragraphs(section_text)
-            ]
+            paragraphs = split_paragraphs_in_range(
+                text,
+                section_start,
+                section_end,
+                skip_ranges=fenced_ranges,
+            )
             chunks.extend(chunk_paragraphs(text, paragraphs, max_chars=max_chars))
         return reindex_chunks(chunks)
 
@@ -280,28 +282,76 @@ def line_number_at_offset(text: str, offset: int) -> int:
 
 
 def split_paragraphs(text: str) -> list[tuple[int, int, str]]:
+    return split_paragraphs_in_range(text, 0, len(text), skip_ranges=[])
+
+
+def split_paragraphs_in_range(
+    text: str,
+    start: int,
+    end: int,
+    *,
+    skip_ranges: list[tuple[int, int]],
+) -> list[tuple[int, int, str]]:
     paragraphs: list[tuple[int, int, str]] = []
-    start = 0
     current: list[str] = []
-    current_start = 0
-    offset = 0
-    for block in text.splitlines(keepends=True):
+    current_start = start
+    offset = start
+    range_index = 0
+
+    def flush(until: int) -> None:
+        nonlocal current
+        if not current:
+            return
+        value = "".join(current).strip()
+        paragraphs.append((current_start, until, value))
+        current = []
+
+    for block in text[start:end].splitlines(keepends=True):
+        while range_index < len(skip_ranges) and skip_ranges[range_index][1] <= offset:
+            range_index += 1
+        in_skip_range = (
+            range_index < len(skip_ranges)
+            and skip_ranges[range_index][0] <= offset < skip_ranges[range_index][1]
+        )
+        if in_skip_range:
+            flush(offset)
+            offset += len(block)
+            continue
         if block.strip():
             if not current:
                 current_start = offset
             current.append(block)
         elif current:
-            value = "".join(current).strip()
-            end = offset
-            paragraphs.append((current_start, end, value))
-            current = []
+            flush(offset)
         offset += len(block)
     if current:
-        value = "".join(current).strip()
-        paragraphs.append((current_start, len(text), value))
-    if not paragraphs and text.strip():
-        paragraphs.append((start, len(text), text.strip()))
+        flush(end)
+    if not paragraphs and not skip_ranges and text[start:end].strip():
+        paragraphs.append((start, end, text[start:end].strip()))
     return paragraphs
+
+
+def split_fenced_code_ranges(text: str) -> list[tuple[int, int]]:
+    ranges: list[tuple[int, int]] = []
+    range_start: int | None = None
+    fence_marker: str | None = None
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        stripped = line.lstrip()
+        if fence_marker is None:
+            marker = markdown_fence_marker(stripped)
+            if marker is not None:
+                range_start = offset
+                fence_marker = marker
+        elif stripped.startswith(fence_marker):
+            assert range_start is not None
+            ranges.append((range_start, offset + len(line)))
+            range_start = None
+            fence_marker = None
+        offset += len(line)
+    if range_start is not None:
+        ranges.append((range_start, len(text)))
+    return ranges
 
 
 def split_markdown_sections(text: str) -> list[tuple[int, int]]:

@@ -502,8 +502,19 @@ def test_markdown_heading_inside_fenced_code_is_not_section_boundary() -> None:
     chunks = chunk_file(Path("notes.md"), text, max_chars=100)
 
     assert len(chunks) == 2
-    assert chunks[0].text == "# A\n\n```\n# not heading\n```\n\npara a"
+    assert chunks[0].text == "# A\n\npara a"
+    assert (chunks[0].start_line, chunks[0].end_line) == (1, 7)
     assert chunks[1].text == "# B\n\npara b"
+
+
+def test_markdown_fenced_code_blocks_are_skipped() -> None:
+    text = "# A\n\nbefore\n\n```python\nprint('skip me')\n```\n\nafter\n"
+
+    chunks = chunk_file(Path("notes.md"), text, max_chars=100)
+
+    assert [chunk.text for chunk in chunks] == ["# A\n\nbefore\n\nafter"]
+    assert [(chunk.start_line, chunk.end_line) for chunk in chunks] == [(1, 9)]
+    assert "skip me" not in chunks[0].text
 
 
 def test_index_progress_reports_scan_and_file_events(

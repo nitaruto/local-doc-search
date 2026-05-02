@@ -67,6 +67,7 @@ SQLite DBには以下を保存する。
 - chunkingは拡張子ごとのstrategyで選択する構造にしている。
   - `.md`, `.markdown` は `markdown-section` strategyを使い、ATX見出し (`#` から `######`) のsection境界を越えてchunkをまとめない。
   - fenced code block内の見出し風行はsection境界として扱わない。
+  - fenced code block (3連バッククォートまたは `~~~`) 内の本文はchunk対象から除外する。
   - `.txt`, `.rst` は `paragraph-pack` strategyを使う。
   - 将来はreStructuredText構造単位、code block考慮などを拡張子別に追加できる。
 - document chunkは `passage: ...` prefixでembeddingする。
