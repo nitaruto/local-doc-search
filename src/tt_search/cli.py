@@ -132,10 +132,10 @@ class RichIndexProgress:
     def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
         if self.task_id is None:
             return
-        description = f"{status}: {path.name}"
+        detail = self.chunk_rate_label()
         if chunks:
-            description = f"{description} ({chunks} chunks)"
-        description = f"{description} [{self.chunk_rate_label()}]"
+            detail = f"{chunks} chunks, {detail}"
+        description = self.progress_description(status=status, path=path, detail=detail)
         self.progress.update(self.task_id, description=description, advance=1)
 
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
@@ -144,7 +144,11 @@ class RichIndexProgress:
         self.current_file_embedded_chunks = 0
         self.progress.update(
             self.task_id,
-            description=f"embedding: {path.name} ({chunks} chunks) [{self.chunk_rate_label()}]",
+            description=self.progress_description(
+                status="embedding",
+                path=path,
+                detail=f"{chunks} chunks, {self.chunk_rate_label()}",
+            ),
         )
 
     def on_embedding_batch_done(
@@ -156,11 +160,18 @@ class RichIndexProgress:
         self.current_file_embedded_chunks = embedded_chunks
         self.progress.update(
             self.task_id,
-            description=(
-                f"embedding: {path.name} ({embedded_chunks}/{total_chunks} chunks) "
-                f"[{self.chunk_rate_label()}]"
+            description=self.progress_description(
+                status="embedding",
+                path=path,
+                detail=(
+                    f"{embedded_chunks}/{total_chunks} chunks, "
+                    f"{self.chunk_rate_label()}"
+                ),
             ),
         )
+
+    def progress_description(self, *, status: str, path: Path, detail: str) -> str:
+        return f"{status}: {path.name}\n{detail}"
 
     def chunk_rate_label(self) -> str:
         elapsed = max(self.clock() - self.started_at, 1e-9)

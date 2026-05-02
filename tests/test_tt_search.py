@@ -788,9 +788,11 @@ def test_rich_index_progress_reports_chunk_rate() -> None:
     assert progress.added == [("Indexing files", 2)]
     descriptions = [str(update["description"]) for update in progress.updates]
     assert "total=0 chunks, 0.00 chunks/s" in descriptions[0]
-    assert "embedding: a.md (2/3 chunks)" in descriptions[1]
+    assert descriptions[1].startswith("embedding: a.md\n")
+    assert "2/3 chunks" in descriptions[1]
     assert "total=2 chunks, 1.00 chunks/s" in descriptions[1]
-    assert "embedding: a.md (3/3 chunks)" in descriptions[2]
+    assert descriptions[2].startswith("embedding: a.md\n")
+    assert "3/3 chunks" in descriptions[2]
     assert "total=3 chunks, 1.00 chunks/s" in descriptions[2]
 
 
