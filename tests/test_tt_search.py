@@ -648,7 +648,7 @@ def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPat
     assert ("query", ["q"]) in calls
 
 
-def test_plamo_auto_uses_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_plamo_auto_uses_mps_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
     from transformers import AutoModel, AutoTokenizer
 
     calls: list[tuple[str, object]] = []
@@ -688,8 +688,8 @@ def test_plamo_auto_uses_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
 
     provider = create_embedding_provider(model_name=PLAMO_MODEL, device="auto", batch_size=1)
 
-    assert provider.device == "cpu"
-    assert ("to", "cpu") in calls
+    assert provider.device == "mps"
+    assert ("to", "mps") in calls
 
 
 def test_plamo_retries_non_finite_vectors(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -203,8 +203,6 @@ def resolve_device(device: DeviceOption) -> str:
 
 
 def resolve_plamo_device(device: DeviceOption) -> str:
-    if device == "auto":
-        return "cpu"
     return resolve_device(device)
 
 

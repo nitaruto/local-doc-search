@@ -144,7 +144,7 @@ search時:
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
   - document embeddingの非有限値を避けるため、modelは明示的に `float32` でloadする。
   - PLaMo custom codeのRotaryEmbedding cacheがload後に確率的に壊れることがあるため、device移動後、dimension probe前に全layerのrotary cacheを再生成する。
-  - 現状、PLaMoはMPS実行で非有限値を返すケースがあるため、`--device auto` は安定性優先でCPUへ解決する。明示的な `--device mps` は指定可能だが、非有限値が出た場合はエラーにする。
+  - `--device auto` は他backendと同じく、PyTorch MPSが利用可能なら `mps`、不可なら `cpu` を使う。
   - PLaMoの `encode_document` / `encode_query` はCPUでも確率的に非有限値を返すことがあるため、非有限値の場合のみ最大5回retryする。全試行失敗した場合はエラーにし、不正vectorは保存しない。
   - document chunkは `encode_document(texts, tokenizer)`、queryは `encode_query(text, tokenizer)` でembeddingする。
   - 公式要件として `sentencepiece` が必要。
