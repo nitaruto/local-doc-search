@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
 from tt_search import cli
@@ -598,6 +599,63 @@ def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
     assert {result.session_id for result in results} == {"019de27d-91d4-7d01-a863-1b189c987846"}
     assert {result.cwd for result in results} == {"/work/project"}
     assert {Path(result.session_path or "").name for result in results} == {"rollout-test.jsonl"}
+
+
+def test_codex_index_command_uses_fixed_db_and_default_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+    created_models: list[str] = []
+
+    def recording_provider(model_name: str, **_: object) -> FakeEmbedder:
+        created_models.append(model_name)
+        return FakeEmbedder()
+
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", db)
+    monkeypatch.setattr(cli, "create_embedding_provider", recording_provider)
+
+    cli.codex_index_cmd(root=[root], rebuild=True)
+
+    with connect(db) as con:
+        metadata = format_info(con)["metadata"]
+
+    assert created_models == ["cl-nagoya/ruri-v3-310m"]
+    assert metadata["index_kind"] == CODEX_HISTORY_INDEX_KIND
+    assert metadata["embedding_model"] == "fake"
+
+
+def test_codex_search_command_uses_fixed_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+    with connect(db) as con:
+        index_codex_sessions(con, roots=[root], embedder=FakeEmbedder(), rebuild=True)
+
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", db)
+
+    cli.codex_search_cmd(query="codex", mode="fts", limit=5, json_output=True)
+
+
+def test_codex_search_command_rejects_missing_db(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", tmp_path / "missing.sqlite")
+
+    with pytest.raises(typer.BadParameter, match="codex-index"):
+        cli.codex_search_cmd(query="codex", mode="fts")
+
+
+def test_codex_search_help_has_no_model_option() -> None:
+    result = runner.invoke(cli.app, ["codex-search", "--help"])
+
+    assert result.exit_code == 0
+    assert "--model" not in result.output
 
 
 def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:

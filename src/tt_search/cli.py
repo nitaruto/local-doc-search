@@ -12,11 +12,19 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn
 from rich.table import Table
 
 from .client import find_live_server, search_via_server
+from .codex_history import (
+    CODEX_HISTORY_DB,
+    CODEX_HISTORY_INDEX_KIND,
+    CODEX_HISTORY_MODEL,
+    CODEX_SESSIONS_ROOT,
+    index_codex_sessions,
+)
 from .db import (
     as_json,
     connect,
     fingerprint_many,
     format_info,
+    get_metadata,
     list_indexed_files,
     normalize_db_paths,
     validate_embedding_compatible,
@@ -217,6 +225,98 @@ def search_cmd(
 app.command(name="search")(search_cmd)
 
 
+@app.command(name="codex-index")
+def codex_index_cmd(
+    root: Annotated[
+        list[Path] | None,
+        typer.Option(
+            "--root",
+            help="Codex sessions root or JSONL file. Defaults to ~/.codex/sessions.",
+        ),
+    ] = None,
+    model: Annotated[str, typer.Option("--model", help="sentence-transformers model name.")] = (
+        CODEX_HISTORY_MODEL
+    ),
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    batch_size: Annotated[
+        int, typer.Option("--batch-size", min=1, help="Embedding batch size for indexing.")
+    ] = DEFAULT_BATCH_SIZE,
+    rebuild: Annotated[bool, typer.Option("--rebuild", help="Clear existing index first.")] = False,
+) -> None:
+    """Build or update the fixed Codex history search database."""
+    roots = root or [CODEX_SESSIONS_ROOT]
+    embedder = create_embedding_provider(
+        model_name=model,
+        device=device,
+        batch_size=batch_size,
+    )
+    with connect(CODEX_HISTORY_DB) as con:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("{task.completed}/{task.total}"),
+            TimeElapsedColumn(),
+            console=console,
+            transient=False,
+        ) as progress:
+            reporter = RichIndexProgress(progress)
+            stats = index_codex_sessions(
+                con,
+                roots=roots,
+                embedder=embedder,
+                rebuild=rebuild,
+                progress=reporter,
+            )
+    console.print(
+        as_json(
+            {
+                "db": str(CODEX_HISTORY_DB),
+                "scanned_files": stats.scanned_files,
+                "excluded_files": stats.excluded_files,
+                "indexed_files": stats.indexed_files,
+                "skipped_files": stats.skipped_files,
+                "chunks": stats.chunks,
+                "removed_files": stats.removed_files,
+            }
+        )
+    )
+
+
+@app.command(name="codex-search")
+def codex_search_cmd(
+    query: Annotated[str, typer.Option("--query", "-q", help="Search query.")],
+    mode: Annotated[
+        SearchMode, typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts.")
+    ] = "fts-vec",
+    limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="Number of results.")] = 10,
+    candidates: Annotated[
+        int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
+    ] = 50,
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    explain: Annotated[bool, typer.Option("--explain", help="Show component scores.")] = False,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print JSON instead of a table.")
+    ] = False,
+) -> None:
+    """Search the fixed Codex history search database."""
+    validate_codex_history_db(CODEX_HISTORY_DB)
+    embedder = build_search_embedder([CODEX_HISTORY_DB], mode=mode, device=device)
+    rows = search_many(
+        [CODEX_HISTORY_DB],
+        query=query,
+        mode=mode,
+        limit=limit,
+        candidates=max(candidates, limit),
+        embedder=embedder,
+    )
+    output_results(rows, json_output=json_output, explain=explain)
+
+
 @app.command()
 def server(
     db: Annotated[
@@ -275,6 +375,19 @@ def server_device_matches(registry: dict[str, object], device: DeviceOption) -> 
     if device == "auto":
         return True
     return registry.get("device") == device
+
+
+def validate_codex_history_db(db_path: Path) -> None:
+    if not db_path.exists():
+        raise typer.BadParameter(
+            f"Codex history DB does not exist: {db_path}. Run `tt-search codex-index` first."
+        )
+    with connect(db_path) as con:
+        index_kind = get_metadata(con, "index_kind")
+    if index_kind != CODEX_HISTORY_INDEX_KIND:
+        raise typer.BadParameter(
+            f"DB is not a Codex history index: {db_path}. Run `tt-search codex-index --rebuild`."
+        )
 
 
 def output_results(rows: list[object], *, json_output: bool, explain: bool) -> None:
