@@ -216,6 +216,7 @@ hybrid時の入力:
 - 既定の入力rootは `~/.codex/sessions`。
 - 既定モデルは `cl-nagoya/ruri-v3-310m`。
 - `--root` で別のsession rootまたは `.jsonl` ファイルを指定できる。
+- rootが存在しない場合、またはfile rootが `.jsonl` ではない場合は、DB作成や `--rebuild` の前にエラーで停止する。
 - `--model`, `--device`, `--batch-size`, `--rebuild` は通常indexと同様に使える。
 - DB metadataに `index_kind=codex-history` を保存する。
 

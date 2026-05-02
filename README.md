@@ -79,7 +79,8 @@ Index and search Codex session history. The database is fixed at
 `codex-index` reads `~/.codex/sessions` by default and uses
 `cl-nagoya/ruri-v3-310m` unless `--model` is specified. Results include
 the source session path and JSONL line number for the indexed turn. Very long
-turns are split before embedding to keep sequence length bounded.
+turns are split before embedding to keep sequence length bounded. If the input
+root does not exist, `codex-index` fails before creating or rebuilding the DB.
 
 ```bash
 uv run local-doc-search codex-index --rebuild

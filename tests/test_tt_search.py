@@ -870,6 +870,33 @@ def test_codex_index_command_uses_fixed_db_and_default_model(
     assert metadata["embedding_model"] == "fake"
 
 
+def test_codex_index_command_rejects_missing_default_sessions_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "codex-history.sqlite"
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", db)
+    monkeypatch.setattr(cli, "CODEX_SESSIONS_ROOT", tmp_path / "missing-sessions")
+
+    with pytest.raises(typer.BadParameter, match="does not exist"):
+        cli.codex_index_cmd(root=None, rebuild=True)
+
+    assert not db.exists()
+
+
+def test_codex_index_command_rejects_non_jsonl_file_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "session.txt"
+    root.write_text("not jsonl\n", encoding="utf-8")
+    db = tmp_path / "codex-history.sqlite"
+    monkeypatch.setattr(cli, "CODEX_HISTORY_DB", db)
+
+    with pytest.raises(typer.BadParameter, match="must be .jsonl"):
+        cli.codex_index_cmd(root=[root], rebuild=True)
+
+    assert not db.exists()
+
+
 def test_codex_search_command_uses_fixed_db(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

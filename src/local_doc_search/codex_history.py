@@ -43,14 +43,34 @@ class CodexTurn:
 
 def iter_codex_session_files(roots: list[Path]) -> list[Path]:
     paths: set[Path] = set()
-    for root in roots:
-        root = root.expanduser().resolve()
+    for root in validate_codex_roots(roots):
         if root.is_file() and root.suffix == ".jsonl":
             paths.add(root)
             continue
         if root.is_dir():
             paths.update(path.resolve() for path in root.rglob("*.jsonl"))
     return sorted(paths)
+
+
+def validate_codex_roots(roots: list[Path]) -> list[Path]:
+    if not roots:
+        raise ValueError("At least one Codex sessions root or JSONL file is required")
+    validated: list[Path] = []
+    for root in roots:
+        expanded = root.expanduser()
+        if not expanded.exists():
+            raise ValueError(f"Codex sessions root does not exist: {expanded}")
+        resolved = expanded.resolve()
+        if resolved.is_file():
+            if resolved.suffix != ".jsonl":
+                raise ValueError(f"Codex session file must be .jsonl: {resolved}")
+            validated.append(resolved)
+            continue
+        if resolved.is_dir():
+            validated.append(resolved)
+            continue
+        raise ValueError(f"Codex sessions root must be a directory or JSONL file: {resolved}")
+    return validated
 
 
 def parse_codex_session_file(path: Path) -> list[CodexTurn]:
@@ -118,6 +138,8 @@ def index_codex_sessions(
     rebuild: bool = False,
     progress: IndexProgress | None = None,
 ) -> IndexStats:
+    roots = validate_codex_roots(roots)
+    paths = iter_codex_session_files(roots)
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
     set_embedding_metadata(
         con,
@@ -130,7 +152,6 @@ def index_codex_sessions(
     if rebuild:
         clear_index(con)
 
-    paths = iter_codex_session_files(roots)
     if progress is not None:
         progress.on_scan_complete(len(paths))
     removed = remove_missing_files(con, {str(path) for path in paths})

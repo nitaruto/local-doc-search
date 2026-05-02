@@ -18,6 +18,7 @@ from .codex_history import (
     CODEX_HISTORY_MODEL,
     CODEX_SESSIONS_ROOT,
     index_codex_sessions,
+    validate_codex_roots,
 )
 from .db import (
     as_json,
@@ -271,7 +272,10 @@ def codex_index_cmd(
     rebuild: Annotated[bool, typer.Option("--rebuild", help="Clear existing index first.")] = False,
 ) -> None:
     """Build or update the fixed Codex history search database."""
-    roots = root or [CODEX_SESSIONS_ROOT]
+    try:
+        roots = validate_codex_roots(root or [CODEX_SESSIONS_ROOT])
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     embedder = create_embedding_provider(
         model_name=model,
         device=device,
