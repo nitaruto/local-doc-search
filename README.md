@@ -26,6 +26,7 @@ uv run local-doc-search index --db notes.sqlite --root ~/notes --ext .md --ext .
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容"
 uv run local-doc-search search --db notes.sqlite --pattern "検索 OR sqlite"
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --pattern "sqlite OR fts" --mode vec-fts --explain
+uv run local-doc-search tui-search --db notes.sqlite --query "検索したい内容"
 uv run local-doc-search info --db notes.sqlite
 uv run local-doc-search files --db notes.sqlite
 uv run local-doc-search files --db notes.sqlite --json
@@ -56,6 +57,12 @@ to `vec-fts`.
 `local-doc-search files` lists the files currently stored in the SQLite index, including `path`,
 `root_path`, `relative_path`, `size`, `mtime_ns`, and `content_hash`.
 Without `--json`, it prints one indexed file per line as `key=value` fields.
+`local-doc-search tui-search` uses `fzf` to select a search result interactively and opens the
+selected document at the hit line with `less` by default. Use `--pager` to choose another
+command such as `vim`, `nvim`, or `bat`. The result list is shown as
+`score source relative_path:start-end`, with the document text kept in the preview pane below
+the result list by default. The hit chunk is placed near the upper part of the preview so long
+files do not push it too far down. Use `--preview-window` to choose another fzf layout.
 
 Apple Silicon Metal acceleration can be selected with `--device`.
 

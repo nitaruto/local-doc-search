@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import base64
+import json
+import shutil
+import subprocess
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from shlex import quote
@@ -45,7 +50,7 @@ from .embeddings import (
 )
 from .indexer import index_paths
 from .mcp import run_mcp_server
-from .search import SearchMode, resolve_search, search_many
+from .search import SearchMode, SearchResult, resolve_search, search_many
 from .server import run_server
 
 app = typer.Typer(help="Local multilingual text search with SQLite FTS5 trigram and sqlite-vec.")
@@ -217,6 +222,98 @@ def search_cmd(
     ] = False,
 ) -> None:
     """Search indexed files."""
+    rows = run_cli_search(
+        db=db,
+        query=query,
+        pattern=pattern,
+        mode=mode,
+        limit=limit,
+        candidates=candidates,
+        device=device,
+        no_server=no_server,
+    )
+    output_results(rows, json_output=json_output, explain=explain)
+
+
+app.command(name="search")(search_cmd)
+
+
+@app.command(name="tui-search")
+def tui_search_cmd(
+    db: Annotated[
+        list[Path] | None,
+        typer.Option("--db", help="SQLite DB path. Can be specified multiple times."),
+    ] = None,
+    query: Annotated[
+        str | None, typer.Option("--query", "-q", help="Semantic/vector search query.")
+    ] = None,
+    pattern: Annotated[
+        str | None, typer.Option("--pattern", help="FTS5 MATCH pattern.")
+    ] = None,
+    mode: Annotated[
+        SearchMode | None,
+        typer.Option("--mode", help="Search mode: fts, vec, fts-vec, vec-fts."),
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", min=1, help="Number of results.")] = 20,
+    candidates: Annotated[
+        int, typer.Option("--candidates", min=1, help="Candidate count before rerank.")
+    ] = 50,
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    no_server: Annotated[
+        bool, typer.Option("--no-server", help="Do not use a running local-doc-search server.")
+    ] = False,
+    pager: Annotated[
+        str, typer.Option("--pager", help="Pager/editor command used to open the selected result.")
+    ] = "less",
+    preview_lines: Annotated[
+        int,
+        typer.Option(
+            "--preview-lines",
+            min=1,
+            help="Number of context lines shown in the fzf preview.",
+        ),
+    ] = 80,
+    no_preview: Annotated[
+        bool, typer.Option("--no-preview", help="Disable fzf preview window.")
+    ] = False,
+    preview_window: Annotated[
+        str,
+        typer.Option("--preview-window", help="fzf preview-window layout."),
+    ] = "down:60%",
+) -> None:
+    """Select a search result with fzf and open the document at the hit line."""
+    rows = run_cli_search(
+        db=db,
+        query=query,
+        pattern=pattern,
+        mode=mode,
+        limit=limit,
+        candidates=candidates,
+        device=device,
+        no_server=no_server,
+    )
+    open_result_from_fzf(
+        rows,
+        pager=pager,
+        preview_lines=preview_lines,
+        no_preview=no_preview,
+        preview_window=preview_window,
+    )
+
+
+def run_cli_search(
+    *,
+    db: list[Path] | None,
+    query: str | None,
+    pattern: str | None,
+    mode: SearchMode | None,
+    limit: int,
+    candidates: int,
+    device: DeviceOption,
+    no_server: bool,
+) -> list[SearchResult]:
     db_paths = normalize_db_paths(db or [])
     resolved = resolve_cli_search(query=query, pattern=pattern, mode=mode)
     if not db_paths:
@@ -238,8 +335,7 @@ def search_cmd(
             limit=limit,
             candidates=max(candidates, limit),
         )
-        output_results(rows, json_output=json_output, explain=explain)
-        return
+        return rows
 
     if not no_server:
         registry = find_live_server(db_paths)
@@ -264,13 +360,12 @@ def search_cmd(
                     limit=limit,
                     candidates=max(candidates, limit),
                 )
-                output_results(rows, json_output=json_output, explain=explain)
-                return
+                return rows
             except ServerSearchError as exc:
                 console.print(f"[yellow]Warning: {exc}. Falling back to local search.[/yellow]")
 
     embedder = build_search_embedder(db_paths, mode=resolved.mode, device=device)
-    rows = search_many(
+    return search_many(
         db_paths,
         vector_query=resolved.vector_query,
         fts_query=resolved.fts_query,
@@ -280,10 +375,6 @@ def search_cmd(
         candidates=max(candidates, limit),
         embedder=embedder,
     )
-    output_results(rows, json_output=json_output, explain=explain)
-
-
-app.command(name="search")(search_cmd)
 
 
 @app.command(name="codex-index")
@@ -508,6 +599,119 @@ def validate_codex_history_db(db_path: Path) -> None:
             f"DB is not a Codex history index: {db_path}. "
             "Run `local-doc-search codex-index --rebuild`."
         )
+
+
+def open_result_from_fzf(
+    rows: list[SearchResult],
+    *,
+    pager: str,
+    preview_lines: int,
+    no_preview: bool,
+    preview_window: str,
+) -> None:
+    if not rows:
+        console.print("[yellow]No results.[/yellow]")
+        return
+    if shutil.which("fzf") is None:
+        raise typer.BadParameter(
+            "fzf is required for tui-search. Install fzf or use search --json."
+        )
+
+    lines = [fzf_line(row) for row in rows]
+    cmd = [
+        "fzf",
+        "--delimiter=\t",
+        "--with-nth=1",
+        "--height=100%",
+        "--header=Enter: open selected result",
+    ]
+    if no_preview:
+        cmd.append("--no-preview")
+    else:
+        cmd.extend(
+            [
+                "--preview",
+                preview_command(preview_lines),
+                f"--preview-window={preview_window}",
+            ]
+        )
+    proc = subprocess.run(
+        cmd,
+        input="\n".join(lines) + "\n",
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if proc.returncode == 130 or not proc.stdout.strip():
+        return
+    if proc.returncode != 0:
+        raise typer.Exit(proc.returncode)
+    row = decode_fzf_selection(proc.stdout)
+    open_result_in_pager(row, pager=pager)
+
+
+def fzf_line(row: SearchResult) -> str:
+    location = f"{row.relative_path}:{row.start_line}-{row.end_line}"
+    label = f"{row.score:8.4f}  {row.source:<7}  {location}"
+    if row.db_path:
+        label = f"{row.score:8.4f}  {row.source:<7}  {Path(row.db_path).name}  {location}"
+    encoded = encode_result(row)
+    return f"{label}\t{encoded}"
+
+
+def encode_result(row: SearchResult) -> str:
+    data = json.dumps(row.__dict__, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return base64.urlsafe_b64encode(data).decode("ascii")
+
+
+def decode_fzf_selection(selection: str) -> SearchResult:
+    encoded = selection.rstrip("\n").split("\t")[-1]
+    data = json.loads(base64.urlsafe_b64decode(encoded).decode("utf-8"))
+    return SearchResult(**data)
+
+
+def preview_command(preview_lines: int) -> str:
+    script = r"""
+import base64
+import json
+import sys
+
+item = json.loads(base64.urlsafe_b64decode(sys.argv[1]).decode("utf-8"))
+context = int(sys.argv[2])
+path = item["path"]
+start = max(int(item["start_line"]), 1)
+end = max(int(item["end_line"]), start)
+before = max(context // 6, 3)
+after = max(context - before, 1)
+from_line = max(start - before, 1)
+to_line = max(end + after, from_line)
+try:
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        for line_no, line in enumerate(handle, start=1):
+            if line_no < from_line:
+                continue
+            if line_no > to_line:
+                break
+            marker = ">" if start <= line_no <= end else " "
+            print(f"{marker}{line_no:6d} {line}", end="")
+except OSError as exc:
+    print(f"preview error: {exc}", file=sys.stderr)
+"""
+    return f"{quote(sys.executable)} -c {quote(script)} {{2}} {preview_lines}"
+
+
+def open_result_in_pager(row: SearchResult, *, pager: str) -> None:
+    executable = shutil.which(pager)
+    if executable is None:
+        raise typer.BadParameter(f"Pager/editor command not found: {pager}")
+    start_line = str(max(row.start_line, 1))
+    if Path(executable).name in {"less", "vim", "nvim", "vi"}:
+        cmd = [executable, f"+{start_line}", row.path]
+    elif Path(executable).name == "bat":
+        cmd = [executable, "--style=numbers", "--highlight-line", start_line, row.path]
+    else:
+        cmd = [executable, row.path]
+    raise typer.Exit(subprocess.run(cmd, check=False).returncode)
 
 
 def output_results(rows: list[object], *, json_output: bool, explain: bool) -> None:

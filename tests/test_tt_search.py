@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from subprocess import CompletedProcess
 from types import SimpleNamespace
 
 import pytest
@@ -55,7 +56,13 @@ from local_doc_search.mcp import (
     codex_session_search_tool_definition,
     search_tool_definition,
 )
-from local_doc_search.search import require_vec_distance, resolve_search, search, search_many
+from local_doc_search.search import (
+    SearchResult,
+    require_vec_distance,
+    resolve_search,
+    search,
+    search_many,
+)
 from local_doc_search.server import SearchRequestHandler
 
 runner = CliRunner()
@@ -528,6 +535,86 @@ def test_search_command_uses_subset_live_server(
 
     assert calls[0]["db_paths"] == [requested.resolve()]
     assert calls[0]["vector_query"] == "検索"
+
+
+def test_tui_search_opens_selected_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "notes.md"
+    source.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    row = SearchResult(
+        db_path=None,
+        chunk_id=1,
+        path=str(source),
+        relative_path="notes.md",
+        chunk_index=0,
+        text="two",
+        start_line=2,
+        end_line=2,
+        start_offset=4,
+        end_offset=7,
+        score=0.8,
+        source="fts",
+    )
+    calls: list[list[str]] = []
+    encoded = cli.encode_result(row)
+
+    monkeypatch.setattr(cli, "run_cli_search", lambda **_: [row])
+    monkeypatch.setattr(cli.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> CompletedProcess[str]:
+        calls.append(cmd)
+        if cmd[0] == "fzf":
+            stdout = f"  0.8000  fts      notes.md:2-2\t{encoded}\n"
+            return CompletedProcess(cmd, 0, stdout=stdout)
+        return CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        cli.tui_search_cmd(db=[tmp_path / "index.sqlite"], query="two", mode="fts")
+
+    assert exc_info.value.exit_code == 0
+    assert calls[0][0] == "fzf"
+    assert "--header=Enter: open selected result" in calls[0]
+    assert "--preview" in calls[0]
+    assert "--preview-window=down:60%" in calls[0]
+    assert calls[1] == ["/usr/bin/less", "+2", str(source)]
+
+
+def test_tui_search_rejects_missing_fzf(monkeypatch: pytest.MonkeyPatch) -> None:
+    row = SearchResult(
+        db_path=None,
+        chunk_id=1,
+        path="/tmp/notes.md",
+        relative_path="notes.md",
+        chunk_index=0,
+        text="text",
+        start_line=1,
+        end_line=1,
+        start_offset=0,
+        end_offset=4,
+        score=0.1,
+        source="fts",
+    )
+    monkeypatch.setattr(cli.shutil, "which", lambda name: None if name == "fzf" else name)
+
+    with pytest.raises(typer.BadParameter, match="fzf is required"):
+        cli.open_result_from_fzf(
+            [row],
+            pager="less",
+            preview_lines=80,
+            no_preview=False,
+            preview_window="down:60%",
+        )
+
+
+def test_preview_command_places_hit_near_upper_preview() -> None:
+    command = cli.preview_command(80)
+
+    assert "before = max(context // 6, 3)" in command
+    assert "after = max(context - before, 1)" in command
 
 
 def test_search_command_rejects_multiple_subset_live_servers(
