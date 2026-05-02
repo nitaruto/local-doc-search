@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .db import connect, serialize_vector
+from .db import connect, ensure_chunks_columns, ensure_files_columns, serialize_vector
 from .embeddings import EmbeddingProvider
 
 SearchMode = Literal["fts", "vec", "fts-vec", "vec-fts"]
@@ -48,6 +48,8 @@ def search(
     db_path: str | None = None,
     query_vector: bytes | None = None,
 ) -> list[SearchResult]:
+    ensure_files_columns(con)
+    ensure_chunks_columns(con)
     if mode in {"vec", "fts-vec", "vec-fts"} and embedder is None:
         raise ValueError("Embedding provider is required for vector search")
     if mode == "fts":

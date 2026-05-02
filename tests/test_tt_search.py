@@ -356,6 +356,69 @@ def test_japanese_trigram_fts_search(tmp_path: Path, sample_roots: tuple[Path, P
     assert [(result.start_line, result.end_line) for result in results] == [(1, 2)]
 
 
+def test_search_migrates_older_chunk_columns(tmp_path: Path) -> None:
+    db = tmp_path / "old.sqlite"
+    with connect(db) as con:
+        con.executescript(
+            """
+            CREATE TABLE files (
+                id INTEGER PRIMARY KEY,
+                path TEXT NOT NULL UNIQUE,
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                content_hash TEXT NOT NULL
+            );
+
+            CREATE TABLE chunks (
+                id INTEGER PRIMARY KEY,
+                file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                chunk_index INTEGER NOT NULL,
+                start_offset INTEGER NOT NULL,
+                end_offset INTEGER NOT NULL,
+                text TEXT NOT NULL,
+                UNIQUE(file_id, chunk_index)
+            );
+
+            CREATE VIRTUAL TABLE chunks_fts USING fts5(
+                path UNINDEXED,
+                text,
+                tokenize='trigram'
+            );
+            """
+        )
+        con.execute(
+            """
+            INSERT INTO files(path, size, mtime_ns, content_hash)
+            VALUES ('/tmp/old.md', 15, 1, 'hash')
+            """
+        )
+        cursor = con.execute(
+            """
+            INSERT INTO chunks(file_id, chunk_index, start_offset, end_offset, text)
+            VALUES (1, 0, 0, 15, '日本語の検索対象')
+            """
+        )
+        con.execute(
+            "INSERT INTO chunks_fts(rowid, path, text) VALUES (?, ?, ?)",
+            (cursor.lastrowid, "/tmp/old.md", "日本語の検索対象"),
+        )
+        results = search(
+            con,
+            query="日本語",
+            mode="fts",
+            limit=10,
+            candidates=10,
+            embedder=None,
+        )
+        columns = {row["name"] for row in con.execute("PRAGMA table_info(chunks)")}
+
+    assert [Path(result.path).name for result in results] == ["old.md"]
+    assert results[0].relative_path == "/tmp/old.md"
+    assert results[0].session_id is None
+    assert "session_id" in columns
+    assert "line_no" in columns
+
+
 def test_mcp_server_lists_and_calls_search_tool(
     tmp_path: Path, sample_roots: tuple[Path, Path]
 ) -> None:
