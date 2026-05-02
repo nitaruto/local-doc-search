@@ -68,6 +68,17 @@ Multiple compatible DBs can be searched together.
 uv run tt-search search --db notes.sqlite --db work.sqlite --query "検索したい内容" --mode fts-vec
 ```
 
+Index and search Codex session history. The database is fixed at
+`~/.codex/tt-search/codex-history.sqlite`, so `--db` is not required.
+`codex-index` reads `~/.codex/sessions` by default and uses
+`cl-nagoya/ruri-v3-310m` unless `--model` is specified.
+
+```bash
+uv run tt-search codex-index --rebuild
+uv run tt-search codex-search --query "以前相談した内容" --mode fts-vec
+uv run tt-search codex-search --query "以前相談した内容" --json
+```
+
 Run a local server to avoid loading the embedding model for every query.
 
 ```bash
