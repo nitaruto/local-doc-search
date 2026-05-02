@@ -5,7 +5,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .client import write_registry
+from .client import find_live_server, write_registry
 from .db import fingerprint_many, fingerprints_match, validate_embedding_compatible
 from .embeddings import DeviceOption, create_embedding_provider
 from .search import resolve_search, search_many
@@ -122,6 +122,12 @@ class SearchHTTPServer(ThreadingHTTPServer):
 
 
 def run_server(db_paths: list[Path], *, host: str, port: int, device: DeviceOption) -> None:
+    existing = find_live_server(db_paths)
+    if existing is not None:
+        raise ValueError(
+            "A local-doc-search server is already running for this DB set at "
+            f"http://{existing['host']}:{existing['port']}"
+        )
     state = SearchServerState(db_paths, device=device)
     httpd = SearchHTTPServer((host, port), state)
     actual_host, actual_port = httpd.server_address

@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 
 import local_doc_search.client as client_module
 import local_doc_search.mcp as mcp_module
+import local_doc_search.server as server_module
 from local_doc_search import cli
 from local_doc_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
@@ -539,6 +540,20 @@ def test_server_search_accepts_vector_query_payload(
 
     assert len(results) == 1
     assert results[0].source == "vec"
+
+
+def test_run_server_rejects_duplicate_live_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    db = tmp_path / "index.sqlite"
+    monkeypatch.setattr(
+        server_module,
+        "find_live_server",
+        lambda _: {"host": "127.0.0.1", "port": 12345},
+    )
+
+    with pytest.raises(ValueError, match="already running.*127.0.0.1:12345"):
+        server_module.run_server([db], host="127.0.0.1", port=0, device="cpu")
 
 
 def test_mcp_server_lists_and_calls_search_tool(
