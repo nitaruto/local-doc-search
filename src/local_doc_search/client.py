@@ -75,6 +75,21 @@ def find_live_server(db_paths: list[Path]) -> dict[str, Any] | None:
     return registry
 
 
+def find_subset_live_servers(db_paths: list[Path]) -> list[dict[str, Any]]:
+    requested = normalize_db_paths(db_paths)
+    requested_set = {str(path) for path in requested}
+    registries: list[dict[str, Any]] = []
+    for registry in find_live_servers():
+        server_paths = registry_db_paths(registry)
+        server_set = {str(path) for path in server_paths}
+        if not requested_set.issubset(server_set):
+            continue
+        registry = dict(registry)
+        registry["requested_db_paths"] = [str(path) for path in requested]
+        registries.append(registry)
+    return registries
+
+
 def find_live_servers() -> list[dict[str, Any]]:
     registries: list[dict[str, Any]] = []
     for registry in read_all_registries():
@@ -134,6 +149,7 @@ def server_health(registry: dict[str, Any]) -> bool:
 def search_via_server(
     registry: dict[str, Any],
     *,
+    db_paths: list[Path] | None = None,
     query: str | None = None,
     vector_query: str | None = None,
     fts_query: str | None = None,
@@ -146,6 +162,11 @@ def search_via_server(
     body = json.dumps(
         {
             "query": query,
+            "db_paths": (
+                [str(path) for path in normalize_db_paths(db_paths)]
+                if db_paths is not None
+                else registry.get("requested_db_paths")
+            ),
             "vector_query": vector_query,
             "fts_query": fts_query,
             "fts_is_pattern": fts_is_pattern,

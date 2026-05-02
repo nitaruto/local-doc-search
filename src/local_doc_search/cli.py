@@ -11,7 +11,13 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
-from .client import ServerSearchError, find_live_server, find_live_servers, search_via_server
+from .client import (
+    ServerSearchError,
+    find_live_server,
+    find_live_servers,
+    find_subset_live_servers,
+    search_via_server,
+)
 from .codex_history import (
     CODEX_HISTORY_DB,
     CODEX_HISTORY_INDEX_KIND,
@@ -237,10 +243,20 @@ def search_cmd(
 
     if not no_server:
         registry = find_live_server(db_paths)
+        if registry is None:
+            subset_registries = find_subset_live_servers(db_paths)
+            if len(subset_registries) > 1:
+                raise typer.BadParameter(
+                    "Multiple live local-doc-search servers contain the requested DBs. "
+                    "Use an exact --db set or stop duplicate servers."
+                )
+            if subset_registries:
+                registry = subset_registries[0]
         if registry is not None and server_device_matches(registry, device):
             try:
                 rows = search_via_server(
                     registry,
+                    db_paths=db_paths,
                     vector_query=resolved.vector_query,
                     fts_query=resolved.fts_query,
                     fts_is_pattern=resolved.fts_is_pattern,

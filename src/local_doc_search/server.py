@@ -30,6 +30,24 @@ class SearchServerState:
                 "DB files changed after server startup. Restart local-doc-search server."
             )
 
+    def resolve_requested_db_paths(self, payload: dict[str, Any]) -> list[Path]:
+        requested = payload.get("db_paths")
+        if requested is None:
+            return self.db_paths
+        if not isinstance(requested, list):
+            raise ValueError("db_paths must be a list")
+        configured = {str(path.expanduser().resolve()): path for path in self.db_paths}
+        db_paths: list[Path] = []
+        for item in requested:
+            resolved = Path(str(item)).expanduser().resolve()
+            db_path = configured.get(str(resolved))
+            if db_path is None:
+                raise ValueError(f"Requested DB is not served by this server: {resolved}")
+            db_paths.append(db_path)
+        if not db_paths:
+            raise ValueError("At least one requested DB is required")
+        return db_paths
+
 
 class SearchRequestHandler(BaseHTTPRequestHandler):
     server: SearchHTTPServer
@@ -54,6 +72,7 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
 
     def handle_search(self, payload: dict[str, Any]):
         self.server.state.assert_fresh()
+        db_paths = self.server.state.resolve_requested_db_paths(payload)
         mode = payload.get("mode", "fts-vec")
         if mode not in {"fts", "vec", "fts-vec", "vec-fts"}:
             raise ValueError(f"Unknown mode: {mode}")
@@ -82,7 +101,7 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
             )
         embedder = None if resolved.mode == "fts" else self.server.state.embedder
         return search_many(
-            self.server.state.db_paths,
+            db_paths,
             vector_query=resolved.vector_query,
             fts_query=resolved.fts_query,
             fts_is_pattern=resolved.fts_is_pattern,

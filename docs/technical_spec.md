@@ -335,6 +335,7 @@ uv run local-doc-search codex-server --device auto
 ```
 
 `local-doc-search search` は同じDB集合のserverが起動中ならserverへ問い合わせる。
+完全一致serverがない場合でも、指定DB集合が起動中serverのDB集合の部分集合であれば、そのserverへ問い合わせて対象DBだけ検索する。
 server registryが存在しfingerprintも一致する場合は、起動直後のraceを避けるため短時間 `/health` をretryする。
 serverがない、応答しない、DB fingerprintが一致しない場合はdirect検索へfallbackする。
 `--db` なしの場合は、liveなserverが1件だけならそのserverへ問い合わせる。

@@ -496,6 +496,56 @@ def test_search_command_without_db_rejects_no_server(
         cli.search_cmd(db=None, query="検索", mode="vec")
 
 
+def test_search_command_uses_subset_live_server(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested = tmp_path / "one.sqlite"
+    extra = tmp_path / "two.sqlite"
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(cli, "find_live_server", lambda _: None)
+    monkeypatch.setattr(
+        cli,
+        "find_subset_live_servers",
+        lambda _: [
+            {
+                "device": "cpu",
+                "port": 12345,
+                "requested_db_paths": [str(requested.resolve())],
+                "db_paths": [str(requested.resolve()), str(extra.resolve())],
+            }
+        ],
+    )
+
+    def recording_server(registry: dict[str, object], **kwargs: object) -> list[object]:
+        calls.append({"registry": registry, **kwargs})
+        return []
+
+    monkeypatch.setattr(cli, "search_via_server", recording_server)
+
+    cli.search_cmd(db=[requested], query="検索", mode="vec")
+
+    assert calls[0]["db_paths"] == [requested.resolve()]
+    assert calls[0]["vector_query"] == "検索"
+
+
+def test_search_command_rejects_multiple_subset_live_servers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "one.sqlite"
+    monkeypatch.setattr(cli, "find_live_server", lambda _: None)
+    monkeypatch.setattr(
+        cli,
+        "find_subset_live_servers",
+        lambda _: [{"device": "cpu", "port": 1111}, {"device": "cpu", "port": 2222}],
+    )
+
+    with pytest.raises(typer.BadParameter, match="Multiple live"):
+        cli.search_cmd(db=[db], query="検索", mode="vec")
+
+
 def test_find_live_server_retries_health(
     tmp_path: Path,
     sample_roots: tuple[Path, Path],
@@ -516,6 +566,32 @@ def test_find_live_server_retries_health(
     assert client_module.find_live_server([db]) is not None
 
 
+def test_find_subset_live_servers_matches_superset_registry(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    build_db(db1, [sample_roots[0]])
+    build_db(db2, [sample_roots[1]])
+    fingerprints = fingerprint_many([db1, db2])
+    registry = {
+        "host": "127.0.0.1",
+        "port": 12345,
+        "device": "cpu",
+        "db_paths": [fingerprint.path for fingerprint in fingerprints],
+        "fingerprints": [fingerprint.__dict__ for fingerprint in fingerprints],
+    }
+    monkeypatch.setattr(client_module, "read_all_registries", lambda: [registry])
+    monkeypatch.setattr(client_module, "wait_for_server_health", lambda _: True)
+
+    matches = client_module.find_subset_live_servers([db1])
+
+    assert len(matches) == 1
+    assert matches[0]["requested_db_paths"] == [str(db1.resolve())]
+
+
 def test_server_search_accepts_vector_query_payload(
     tmp_path: Path, sample_roots: tuple[Path, Path]
 ) -> None:
@@ -526,6 +602,7 @@ def test_server_search_accepts_vector_query_payload(
         db_paths=[db],
         embedder=FakeEmbedder(),
         assert_fresh=lambda: None,
+        resolve_requested_db_paths=lambda _: [db],
     )
     handler.server = SimpleNamespace(state=state)
 
@@ -540,6 +617,49 @@ def test_server_search_accepts_vector_query_payload(
 
     assert len(results) == 1
     assert results[0].source == "vec"
+
+
+def test_server_search_limits_to_requested_db_paths(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    build_db(db1, [sample_roots[0]])
+    build_db(db2, [sample_roots[1]])
+    handler = object.__new__(SearchRequestHandler)
+    state = SimpleNamespace(
+        db_paths=[db1.resolve(), db2.resolve()],
+        embedder=FakeEmbedder(),
+        assert_fresh=lambda: None,
+    )
+    handler.server = SimpleNamespace(state=state)
+    handler.server.state.resolve_requested_db_paths = (
+        lambda payload: [Path(path).resolve() for path in payload["db_paths"]]
+    )
+
+    results = handler.handle_search(
+        {
+            "db_paths": [str(db2.resolve())],
+            "query": "京都",
+            "mode": "fts",
+            "limit": 5,
+            "candidates": 5,
+        }
+    )
+
+    assert {Path(result.db_path or "").name for result in results} == {"two.sqlite"}
+
+
+def test_server_rejects_unserved_requested_db_path(tmp_path: Path) -> None:
+    db = tmp_path / "one.sqlite"
+    other = tmp_path / "other.sqlite"
+    state = SimpleNamespace(db_paths=[db.resolve()])
+
+    with pytest.raises(ValueError, match="not served"):
+        server_module.SearchServerState.resolve_requested_db_paths(
+            state,
+            {"db_paths": [str(other)]},
+        )
 
 
 def test_run_server_rejects_duplicate_live_server(
