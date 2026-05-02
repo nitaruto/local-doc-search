@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal, Protocol
@@ -130,12 +131,18 @@ class PlamoEmbeddingProvider:
 
     def _encode_with_retry(self, encode: Callable[[], object]) -> list[list[float]]:
         last_error: ValueError | None = None
-        for _ in range(PLAMO_RETRY_ATTEMPTS):
+        for attempt in range(1, PLAMO_RETRY_ATTEMPTS + 1):
             try:
                 return tensor_to_vectors(encode())
             except ValueError as error:
                 if "non-finite" not in str(error):
                     raise
+                warnings.warn(
+                    "PLaMo embedding returned non-finite values; "
+                    f"retrying ({attempt}/{PLAMO_RETRY_ATTEMPTS}).",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 last_error = error
         assert last_error is not None
         raise last_error

@@ -745,10 +745,12 @@ def test_plamo_retries_non_finite_vectors(monkeypatch: pytest.MonkeyPatch) -> No
         lambda model_name, trust_remote_code, dtype: FakePlamoModel(),
     )
 
-    provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
+    with pytest.warns(RuntimeWarning, match="PLaMo embedding returned non-finite values"):
+        provider = create_embedding_provider(model_name=PLAMO_MODEL, device="cpu", batch_size=1)
 
     assert provider.dim == 3
-    assert provider.embed_query("q") == pytest.approx([0.0, 1.0, 0.0])
+    with pytest.warns(RuntimeWarning, match="PLaMo embedding returned non-finite values"):
+        assert provider.embed_query("q") == pytest.approx([0.0, 1.0, 0.0])
     assert calls[:2] == ["document:1", "document:2"]
     assert calls[-2:] == ["query:1", "query:2"]
 
