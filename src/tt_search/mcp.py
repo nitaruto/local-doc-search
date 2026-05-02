@@ -193,7 +193,6 @@ def search_tool_definition() -> dict[str, Any]:
                     "description": "Include component scores.",
                 },
             },
-            "anyOf": [{"required": ["query"]}, {"required": ["pattern"]}],
             "additionalProperties": False,
         },
     }

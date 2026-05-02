@@ -46,7 +46,7 @@ from tt_search.indexer import (
     index_paths,
     strategy_for_path,
 )
-from tt_search.mcp import McpSearchServer
+from tt_search.mcp import McpSearchServer, search_tool_definition
 from tt_search.search import require_vec_distance, resolve_search, search, search_many
 
 runner = CliRunner()
@@ -494,6 +494,16 @@ def test_mcp_search_tool_accepts_pattern_only(
     payload = call["result"]["content"][0]["text"]
     assert '"relative_path": "search.md"' in payload
     assert '"relative_path": "travel.md"' in payload
+
+
+def test_mcp_search_tool_schema_avoids_root_composition_keywords() -> None:
+    schema = search_tool_definition()["inputSchema"]
+
+    assert "anyOf" not in schema
+    assert "oneOf" not in schema
+    assert "allOf" not in schema
+    assert "not" not in schema
+    assert "enum" not in schema
 
 
 def test_mcp_server_roots_tool(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:
