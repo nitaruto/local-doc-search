@@ -584,6 +584,14 @@ def test_model_prefix_policy() -> None:
     assert prefix_query("検索", "ruri-v3") == "検索クエリ: 検索"
     assert prefix_passage("文章", "ruri-v3") == "検索文書: 文章"
 
+    assert prefix_policy_for_model("sbintuitions/sarashina-embedding-v2-1b") == "sarashina-v2"
+    assert (
+        prefix_query("検索", "sarashina-v2")
+        == "task: 質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。\n"
+        "query: 検索"
+    )
+    assert prefix_passage("文章", "sarashina-v2") == "text: 文章"
+
     assert prefix_policy_for_model("pfnet/plamo-embedding-1b") == "plamo"
     assert prefix_query("検索", "plamo") == "検索"
     assert prefix_passage("文章", "plamo") == "文章"

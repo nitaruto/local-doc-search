@@ -37,6 +37,9 @@ uv run tt-search index --db notes.sqlite --root ~/notes --exclude '^archive/' --
 The default embedding model is `intfloat/multilingual-e5-small`.
 Search uses the embedding model stored in the SQLite DB at index time.
 For Japanese-focused quality, `cl-nagoya/ruri-v3-*` is the preferred experimental upgrade path.
+`sbintuitions/sarashina-embedding-v2-1b` is also supported through the SentenceTransformer
+backend with its recommended retrieval prefixes. Check the model license before use because
+it is distributed under the Sarashina non-commercial license.
 `pfnet/plamo-embedding-1b` is supported for experiments, but it is not recommended for normal
 use because its custom `encode_document` / `encode_query` path can return non-finite vectors
 on both CPU and MPS and therefore requires retry handling. The PLaMo backend loads the model
@@ -51,6 +54,7 @@ Apple Silicon Metal acceleration can be selected with `--device`.
 
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run tt-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
 uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```

@@ -127,18 +127,20 @@ search時:
 
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
+- `sbintuitions/sarashina-embedding-v2-*`: query=`task: 質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。\nquery: `, passage=`text: `
 - `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためtt-search側では付与しない。
 
 推奨:
 
 - 安定運用では `intfloat/multilingual-e5-small` を基本とする。
 - 日本語精度を重視する場合は `cl-nagoya/ruri-v3-*` を優先候補とする。
+- `sbintuitions/sarashina-embedding-v2-1b` はSentenceTransformer backendで利用できる日本語重視の候補。公式model cardのRetrieval/Reranking用prefixを付与する。Sarashina Model NonCommercial License Agreementで配布されているため用途に注意する。
 - `pfnet/plamo-embedding-1b` は現状、CPU/MPSともに非有限値を返す確率が高く、retry前提になるため実験用扱いとする。通常利用では推奨しない。
 
 現在のbackend:
 
 - `sentence-transformers`
-  - `intfloat/multilingual-e5-small`, `cl-nagoya/ruri-v3-*` など。
+  - `intfloat/multilingual-e5-small`, `cl-nagoya/ruri-v3-*`, `sbintuitions/sarashina-embedding-v2-*` など。
 - `plamo-custom`
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
@@ -154,6 +156,7 @@ search時:
 ```bash
 uv run tt-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
 uv run tt-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
+uv run tt-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
 uv run tt-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run tt-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
 ```

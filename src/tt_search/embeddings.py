@@ -13,6 +13,10 @@ EMBEDDING_BACKEND = "sentence-transformers"
 PLAMO_MODEL = "pfnet/plamo-embedding-1b"
 PLAMO_BACKEND = "plamo-custom"
 PLAMO_RETRY_ATTEMPTS = 5
+SARASHINA_V2_PREFIX = "sbintuitions/sarashina-embedding-v2-"
+SARASHINA_V2_RETRIEVAL_INSTRUCTION = (
+    "質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。"
+)
 DeviceOption = Literal["auto", "cpu", "mps"]
 
 
@@ -224,6 +228,8 @@ def mps_is_available() -> bool:
 def prefix_policy_for_model(model_name: str) -> str:
     if model_name.startswith("cl-nagoya/ruri-v3-"):
         return "ruri-v3"
+    if model_name.startswith(SARASHINA_V2_PREFIX):
+        return "sarashina-v2"
     if model_name == PLAMO_MODEL:
         return "plamo"
     return "e5"
@@ -232,6 +238,8 @@ def prefix_policy_for_model(model_name: str) -> str:
 def prefix_query(text: str, prefix_policy: str) -> str:
     if prefix_policy == "ruri-v3":
         return f"検索クエリ: {text}"
+    if prefix_policy == "sarashina-v2":
+        return f"task: {SARASHINA_V2_RETRIEVAL_INSTRUCTION}\nquery: {text}"
     if prefix_policy == "e5":
         return f"query: {text}"
     return text
@@ -240,6 +248,8 @@ def prefix_query(text: str, prefix_policy: str) -> str:
 def prefix_passage(text: str, prefix_policy: str) -> str:
     if prefix_policy == "ruri-v3":
         return f"検索文書: {text}"
+    if prefix_policy == "sarashina-v2":
+        return f"text: {text}"
     if prefix_policy == "e5":
         return f"passage: {text}"
     return text
