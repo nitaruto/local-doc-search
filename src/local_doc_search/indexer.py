@@ -71,17 +71,21 @@ class IndexStats:
 class IndexProgress(Protocol):
     def on_scan_complete(self, total_files: int) -> None:
         """Called after candidate files are discovered."""
+        ...
 
     def on_file_done(self, *, path: Path, status: str, chunks: int = 0) -> None:
         """Called after a file is skipped, indexed, or rejected."""
+        ...
 
     def on_embedding_start(self, *, path: Path, chunks: int) -> None:
         """Called before embedding chunks for a file."""
+        ...
 
     def on_embedding_batch_done(
         self, *, path: Path, embedded_chunks: int, total_chunks: int
     ) -> None:
         """Called after embedding a batch of chunks for a file."""
+        ...
 
 
 class ChunkingStrategy(Protocol):
@@ -89,6 +93,7 @@ class ChunkingStrategy(Protocol):
 
     def chunk(self, text: str, *, max_chars: int = MAX_CHARS) -> list[Chunk]:
         """Split file text into searchable chunks."""
+        ...
 
 
 class ParagraphPackingStrategy:
@@ -607,6 +612,8 @@ def upsert_file(
             indexed.content_hash,
         ),
     )
+    if cursor.lastrowid is None:
+        raise RuntimeError("SQLite did not return a file rowid")
     file_id = int(cursor.lastrowid)
     embedded_chunks = 0
     for start in range(0, len(chunks), embedder.batch_size):
@@ -667,6 +674,8 @@ def insert_chunk(
             chunk.line_no,
         ),
     )
+    if cursor.lastrowid is None:
+        raise RuntimeError("SQLite did not return a chunk rowid")
     chunk_id = int(cursor.lastrowid)
     con.execute(
         "INSERT INTO chunks_fts(rowid, path, text) VALUES (?, ?, ?)",

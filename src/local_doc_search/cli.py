@@ -5,11 +5,11 @@ import json
 import shutil
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from shlex import quote
 from time import perf_counter
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 from rich.console import Console
@@ -714,7 +714,7 @@ def open_result_in_pager(row: SearchResult, *, pager: str) -> None:
     raise typer.Exit(subprocess.run(cmd, check=False).returncode)
 
 
-def output_results(rows: list[object], *, json_output: bool, explain: bool) -> None:
+def output_results(rows: Sequence[SearchResult], *, json_output: bool, explain: bool) -> None:
     if json_output:
         console.print(as_json([row.__dict__ for row in rows]))
         return
@@ -733,7 +733,8 @@ def info(
         console.print(as_json(data))
         return
     table = Table("key", "value")
-    for key, value in data["metadata"].items():
+    metadata = cast(dict[str, str], data["metadata"])
+    for key, value in metadata.items():
         table.add_row(str(key), str(value))
     table.add_row("file_count", str(data["file_count"]))
     table.add_row("chunk_count", str(data["chunk_count"]))
@@ -766,7 +767,7 @@ def files_cmd(
         )
 
 
-def print_results(rows: list[object], *, explain: bool) -> None:
+def print_results(rows: Sequence[SearchResult], *, explain: bool) -> None:
     show_db_path = any(row.db_path for row in rows)
     show_session = any(getattr(row, "session_id", None) for row in rows)
     columns = ["score"]

@@ -430,7 +430,10 @@ cwd = "/absolute/path/to/local_search"
 ```bash
 uv run pytest
 uv run ruff check .
+uv run pyright
 ```
+
+`pyright` は `typeCheckingMode = "standard"` で `src/local_doc_search` と `tests` を対象にする。
 
 テストで確認している主な内容:
 

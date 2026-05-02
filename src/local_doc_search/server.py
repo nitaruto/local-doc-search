@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .client import find_live_server, write_registry
 from .db import fingerprint_many, fingerprints_match, validate_embedding_compatible
@@ -50,8 +50,6 @@ class SearchServerState:
 
 
 class SearchRequestHandler(BaseHTTPRequestHandler):
-    server: SearchHTTPServer
-
     def do_GET(self) -> None:
         if self.path != "/health":
             self.send_error(404)
@@ -71,8 +69,9 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
         self.write_json({"results": [result.__dict__ for result in results]})
 
     def handle_search(self, payload: dict[str, Any]):
-        self.server.state.assert_fresh()
-        db_paths = self.server.state.resolve_requested_db_paths(payload)
+        server = cast(SearchHTTPServer, self.server)
+        server.state.assert_fresh()
+        db_paths = server.state.resolve_requested_db_paths(payload)
         mode = payload.get("mode", "fts-vec")
         if mode not in {"fts", "vec", "fts-vec", "vec-fts"}:
             raise ValueError(f"Unknown mode: {mode}")
@@ -99,7 +98,7 @@ class SearchRequestHandler(BaseHTTPRequestHandler):
                 pattern=None,
                 mode=mode,
             )
-        embedder = None if resolved.mode == "fts" else self.server.state.embedder
+        embedder = None if resolved.mode == "fts" else server.state.embedder
         return search_many(
             db_paths,
             vector_query=resolved.vector_query,
@@ -149,7 +148,7 @@ def run_server(db_paths: list[Path], *, host: str, port: int, device: DeviceOpti
         )
     state = SearchServerState(db_paths, device=device)
     httpd = SearchHTTPServer((host, port), state)
-    actual_host, actual_port = httpd.server_address
+    actual_host, actual_port = cast(tuple[str, int], httpd.server_address)
     write_registry(
         db_paths,
         host=str(actual_host),

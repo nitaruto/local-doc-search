@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 import typer
@@ -228,7 +229,8 @@ def test_index_multiple_roots_and_extension_filter(
 
     assert info["file_count"] == 2
     assert info["chunk_count"] == 2
-    assert info["metadata"]["embedding_model"] == "fake"
+    metadata = cast(dict[str, str], info["metadata"])
+    assert metadata["embedding_model"] == "fake"
     assert [row["relative_path"] for row in rows] == ["search.md", "travel.md"]
 
 
@@ -691,7 +693,7 @@ def test_server_search_accepts_vector_query_payload(
         assert_fresh=lambda: None,
         resolve_requested_db_paths=lambda _: [db],
     )
-    handler.server = SimpleNamespace(state=state)
+    cast(Any, handler).server = SimpleNamespace(state=state)
 
     results = handler.handle_search(
         {
@@ -718,11 +720,11 @@ def test_server_search_limits_to_requested_db_paths(
         db_paths=[db1.resolve(), db2.resolve()],
         embedder=FakeEmbedder(),
         assert_fresh=lambda: None,
+        resolve_requested_db_paths=lambda payload: [
+            Path(path).resolve() for path in payload["db_paths"]
+        ],
     )
-    handler.server = SimpleNamespace(state=state)
-    handler.server.state.resolve_requested_db_paths = (
-        lambda payload: [Path(path).resolve() for path in payload["db_paths"]]
-    )
+    cast(Any, handler).server = SimpleNamespace(state=state)
 
     results = handler.handle_search(
         {
@@ -744,7 +746,7 @@ def test_server_rejects_unserved_requested_db_path(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="not served"):
         server_module.SearchServerState.resolve_requested_db_paths(
-            state,
+            cast(Any, state),
             {"db_paths": [str(other)]},
         )
 
@@ -1122,7 +1124,7 @@ def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
             embedder=FakeEmbedder(),
             rebuild=True,
         )
-        metadata = format_info(con)["metadata"]
+        metadata = cast(dict[str, str], format_info(con)["metadata"])
         results = search(
             con,
             query="検索",
@@ -1184,7 +1186,7 @@ def test_codex_index_command_uses_fixed_db_and_default_model(
     cli.codex_index_cmd(root=[root], rebuild=True)
 
     with connect(db) as con:
-        metadata = format_info(con)["metadata"]
+        metadata = cast(dict[str, str], format_info(con)["metadata"])
 
     assert created_models == ["cl-nagoya/ruri-v3-310m"]
     assert metadata["index_kind"] == CODEX_HISTORY_INDEX_KIND
@@ -1411,7 +1413,7 @@ def test_index_progress_reports_scan_and_file_events(
 def test_rich_index_progress_reports_chunk_rate() -> None:
     times = iter([0.0, 0.0, 1.0, 2.0, 3.0, 4.0])
     progress = FakeRichProgress()
-    reporter = cli.RichIndexProgress(progress, clock=lambda: next(times))
+    reporter = cli.RichIndexProgress(cast(Any, progress), clock=lambda: next(times))
 
     reporter.on_scan_complete(2)
     reporter.on_embedding_start(path=Path("a.md"), chunks=3)
@@ -1445,10 +1447,11 @@ def test_embedding_metadata_is_saved(tmp_path: Path, sample_roots: tuple[Path, P
     with connect(db) as con:
         info = format_info(con)
 
-    assert info["metadata"]["embedding_backend"] == "fake"
-    assert info["metadata"]["embedding_device"] == "cpu"
-    assert info["metadata"]["embedding_batch_size"] == "2"
-    assert info["metadata"]["embedding_prefix_policy"] == "fake"
+    metadata = cast(dict[str, str], info["metadata"])
+    assert metadata["embedding_backend"] == "fake"
+    assert metadata["embedding_device"] == "cpu"
+    assert metadata["embedding_batch_size"] == "2"
+    assert metadata["embedding_prefix_policy"] == "fake"
 
 
 def test_device_resolution(monkeypatch: pytest.MonkeyPatch) -> None:

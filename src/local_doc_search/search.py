@@ -418,6 +418,8 @@ def optional_str(value: object) -> str | None:
 
 
 def optional_int(value: object) -> int | None:
+    if not isinstance(value, int | str | bytes | bytearray):
+        return None
     return None if value is None else int(value)
 
 
@@ -537,6 +539,8 @@ def require_vec_distance(value: object) -> float:
             "sqlite-vec returned NULL distance. The DB may contain non-finite embeddings; "
             "rebuild it with `local-doc-search index --rebuild`."
         )
+    if not isinstance(value, int | float | str | bytes | bytearray):
+        raise ValueError(f"sqlite-vec returned unsupported distance value: {value!r}")
     return float(value)
 
 

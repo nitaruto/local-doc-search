@@ -28,7 +28,7 @@ class McpSearchServer:
         self.db_paths = normalize_db_paths(db_paths)
         if not self.db_paths:
             raise ValueError("At least one --db is required")
-        self.device = device
+        self.device: DeviceOption = device
         self._embedder: EmbeddingProvider | None = None
         self._codex_embedder: EmbeddingProvider | None = None
 

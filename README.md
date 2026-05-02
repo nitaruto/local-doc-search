@@ -131,3 +131,13 @@ The MCP server exposes:
 - `codex_session_search`: search indexed Codex session history from the fixed
   `~/.codex/local-doc-search/codex-history.sqlite` DB with the same search arguments.
 - `roots`: list the indexed root directories for the DBs configured with `--db`.
+
+Development checks:
+
+```bash
+uv run ruff check .
+uv run pyright
+uv run pytest
+```
+
+`pyright` checks both `src/local_doc_search` and `tests`.

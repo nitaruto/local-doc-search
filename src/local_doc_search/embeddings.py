@@ -3,7 +3,7 @@ from __future__ import annotations
 import warnings
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 import numpy as np
 
@@ -18,6 +18,7 @@ SARASHINA_V2_RETRIEVAL_INSTRUCTION = (
     "質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。"
 )
 DeviceOption = Literal["auto", "cpu", "mps"]
+RuntimeDevice = Literal["cpu", "mps"]
 
 
 class EmbeddingProvider(Protocol):
@@ -30,22 +31,24 @@ class EmbeddingProvider(Protocol):
 
     def embed_passages(self, texts: list[str]) -> list[list[float]]:
         """Embed document chunks."""
+        ...
 
     def embed_query(self, text: str) -> list[float]:
         """Embed a search query."""
+        ...
 
 
 @dataclass
 class SentenceTransformerEmbeddingProvider:
     model_name: str = DEFAULT_MODEL
-    device: DeviceOption = "auto"
+    device: str = "auto"
     batch_size: int = DEFAULT_BATCH_SIZE
 
     def __post_init__(self) -> None:
         from sentence_transformers import SentenceTransformer
 
         self.backend = EMBEDDING_BACKEND
-        self.device = resolve_device(self.device)
+        self.device = resolve_device(cast(DeviceOption, self.device))
         self.prefix_policy = prefix_policy_for_model(self.model_name)
         self._model = SentenceTransformer(
             self.model_name,
@@ -86,7 +89,7 @@ class SentenceTransformerEmbeddingProvider:
 @dataclass
 class PlamoEmbeddingProvider:
     model_name: str = PLAMO_MODEL
-    device: DeviceOption = "auto"
+    device: str = "auto"
     batch_size: int = DEFAULT_BATCH_SIZE
 
     def __post_init__(self) -> None:
@@ -94,7 +97,7 @@ class PlamoEmbeddingProvider:
         from transformers import AutoModel, AutoTokenizer
 
         self.backend = PLAMO_BACKEND
-        self.device = resolve_plamo_device(self.device)
+        self.device = resolve_plamo_device(cast(DeviceOption, self.device))
         self.prefix_policy = "plamo"
         self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
         self._model = AutoModel.from_pretrained(
@@ -169,7 +172,7 @@ def create_embedding_provider(
 
 def tensor_to_vectors(value: object) -> list[list[float]]:
     if hasattr(value, "detach"):
-        value = value.detach().cpu().float()
+        value = cast(Any, value).detach().cpu().float()
     arr = np.asarray(value, dtype=np.float32)
     if arr.ndim == 1:
         arr = arr.reshape(1, -1)
@@ -201,7 +204,7 @@ def refresh_plamo_rotary_cache(model: object) -> None:
         )
 
 
-def resolve_device(device: DeviceOption) -> str:
+def resolve_device(device: DeviceOption) -> RuntimeDevice:
     if device == "cpu":
         return "cpu"
     if device == "mps":
@@ -213,7 +216,7 @@ def resolve_device(device: DeviceOption) -> str:
     return "cpu"
 
 
-def resolve_plamo_device(device: DeviceOption) -> str:
+def resolve_plamo_device(device: DeviceOption) -> RuntimeDevice:
     return resolve_device(device)
 
 

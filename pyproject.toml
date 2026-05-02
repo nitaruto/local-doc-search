@@ -18,6 +18,7 @@ local-doc-search = "local_doc_search.cli:app"
 
 [dependency-groups]
 dev = [
+    "pyright>=1.1",
     "pytest>=8.2",
     "ruff>=0.8",
 ]
@@ -35,3 +36,10 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.pyright]
+include = ["src/local_doc_search", "tests"]
+pythonVersion = "3.11"
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false
+reportPrivateImportUsage = false
