@@ -76,6 +76,19 @@ uv run local-doc-search search --db notes.sqlite --query "検索したい内容"
 ```
 
 `--device auto` uses MPS when PyTorch MPS is available and falls back to CPU otherwise.
+Use `benchmark-embeddings` to compare embedding load time and warm encode speed without
+building an index.
+
+```bash
+uv run local-doc-search benchmark-embeddings \
+  --model pfnet/plamo-embedding-1b \
+  --model sbintuitions/sarashina-embedding-v2-1b \
+  --device mps \
+  --batch-size 16 \
+  --documents 32 \
+  --repeat 3 \
+  --json
+```
 
 Multiple compatible DBs can be searched together.
 

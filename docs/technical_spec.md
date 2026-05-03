@@ -137,6 +137,15 @@ search時:
   - 実際のquery prefixはDB metadataの `embedding_prefix_policy` から決める。
 - DBにembedding metadataがない場合は、reindexを促すエラーにする。
 
+benchmark時:
+
+- `local-doc-search benchmark-embeddings` はindexを作成せず、embedding provider単体の速度を測る。
+- `--model` は複数指定できる。省略時は `pfnet/plamo-embedding-1b` と `sbintuitions/sarashina-embedding-v2-1b` を比較する。
+- `--device auto|cpu|mps`, `--batch-size`, `--documents`, `--warmup`, `--repeat`, `--task passage|query` を指定できる。
+- 出力ではモデルロード時間と、warmup後のencode時間を分ける。
+- `mps` の場合は計測前後に `torch.mps.synchronize()` を呼び、非同期実行の未完了分を測定から漏らさない。
+- `--input-file` を指定するとUTF-8テキストを段落単位、段落が1つだけなら非空行単位でbenchmark文書として読む。
+
 対象モデルとprefix policy:
 
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `

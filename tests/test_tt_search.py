@@ -15,6 +15,12 @@ import local_doc_search.client as client_module
 import local_doc_search.mcp as mcp_module
 import local_doc_search.server as server_module
 from local_doc_search import cli
+from local_doc_search.benchmark import (
+    benchmark_provider,
+    load_benchmark_texts,
+    read_input_texts,
+    summarize_timings,
+)
 from local_doc_search.codex_history import (
     CODEX_HISTORY_INDEX_KIND,
     codex_indexed_file,
@@ -1566,6 +1572,72 @@ def test_rich_index_progress_reports_chunk_rate() -> None:
     assert descriptions[2].startswith("embedding: a.md\n")
     assert "3/3 chunks" in descriptions[2]
     assert "total=3 chunks, 1.00 chunks/s" in descriptions[2]
+
+
+def test_load_benchmark_texts_repeats_default_samples() -> None:
+    texts = load_benchmark_texts(None, documents=10)
+
+    assert len(texts) == 10
+    assert texts[0] == texts[8]
+
+
+def test_read_input_texts_prefers_paragraphs(tmp_path: Path) -> None:
+    path = tmp_path / "bench.txt"
+    path.write_text("first line\nstill first\n\nsecond\n", encoding="utf-8")
+
+    assert read_input_texts(path) == ["first line\nstill first", "second"]
+
+
+def test_summarize_timings_reports_throughput() -> None:
+    from local_doc_search.benchmark import BenchmarkTiming
+
+    stats = summarize_timings(
+        [
+            BenchmarkTiming(seconds=2.0, vectors=4, chars=20),
+            BenchmarkTiming(seconds=4.0, vectors=4, chars=20),
+        ]
+    )
+
+    assert stats["repeat"] == 2
+    assert stats["mean_seconds"] == 3.0
+    assert stats["median_seconds"] == 3.0
+    assert stats["vectors_per_second"] == pytest.approx(4 / 3)
+    assert stats["chars_per_second"] == pytest.approx(20 / 3)
+
+
+def test_benchmark_provider_measures_passage_embeddings() -> None:
+    times = iter([0.0, 2.0, 2.0, 5.0])
+    sync_calls: list[str] = []
+
+    stats = benchmark_provider(
+        FakeEmbedder(),
+        ["a", "bb"],
+        task="passage",
+        warmup=1,
+        repeat=2,
+        clock=lambda: next(times),
+        synchronize=lambda: sync_calls.append("sync"),
+    )
+
+    assert stats["seconds"] == [2.0, 3.0]
+    assert stats["vectors_per_second"] == pytest.approx(2 / 2.5)
+    assert sync_calls == ["sync", "sync", "sync", "sync", "sync"]
+
+
+def test_benchmark_provider_measures_single_query() -> None:
+    times = iter([1.0, 3.0])
+
+    stats = benchmark_provider(
+        FakeEmbedder(),
+        ["query", "ignored"],
+        task="query",
+        warmup=0,
+        repeat=1,
+        clock=lambda: next(times),
+    )
+
+    assert stats["seconds"] == [2.0]
+    assert stats["vectors_per_second"] == pytest.approx(0.5)
 
 
 def test_schema_dimension_mismatch_is_rejected(tmp_path: Path) -> None:

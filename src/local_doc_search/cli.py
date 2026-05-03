@@ -9,13 +9,19 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from shlex import quote
 from time import perf_counter
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import typer
 from rich.console import Console
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskID, TextColumn, TimeElapsedColumn
 from rich.table import Table
 
+from .benchmark import (
+    BenchmarkTask,
+    benchmark_provider,
+    load_benchmark_texts,
+    synchronize_torch_device,
+)
 from .client import (
     ServerSearchError,
     find_live_server,
@@ -44,6 +50,7 @@ from .db import (
 from .embeddings import (
     DEFAULT_BATCH_SIZE,
     DEFAULT_MODEL,
+    PLAMO_MODEL,
     DeviceOption,
     EmbeddingProvider,
     create_embedding_provider,
@@ -55,6 +62,7 @@ from .server import run_server
 
 app = typer.Typer(help="Local multilingual text search with SQLite FTS5 trigram and sqlite-vec.")
 console = Console()
+SARASHINA_BENCHMARK_MODEL = "sbintuitions/sarashina-embedding-v2-1b"
 
 
 @app.command()
@@ -137,6 +145,112 @@ def index(
             }
         )
     )
+
+
+@app.command(name="benchmark-embeddings")
+def benchmark_embeddings_cmd(
+    model: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--model",
+            help=(
+                "Embedding model to benchmark. Can be specified multiple times. "
+                "Defaults to PLaMo and Sarashina."
+            ),
+        ),
+    ] = None,
+    device: Annotated[
+        DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
+    ] = "auto",
+    batch_size: Annotated[
+        int, typer.Option("--batch-size", min=1, help="Embedding batch size.")
+    ] = DEFAULT_BATCH_SIZE,
+    documents: Annotated[
+        int, typer.Option("--documents", min=1, help="Number of benchmark documents.")
+    ] = 32,
+    repeat: Annotated[
+        int, typer.Option("--repeat", min=1, help="Measured encode repetitions.")
+    ] = 3,
+    warmup: Annotated[
+        int, typer.Option("--warmup", min=0, help="Warmup encode repetitions.")
+    ] = 1,
+    task: Annotated[
+        BenchmarkTask,
+        typer.Option("--task", help="Embedding task to benchmark: passage or query."),
+    ] = "passage",
+    input_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--input-file",
+            help="UTF-8 text file. Paragraphs, or non-empty lines, are benchmark documents.",
+        ),
+    ] = None,
+    json_output: Annotated[
+        bool, typer.Option("--json", help="Print JSON instead of key=value lines.")
+    ] = False,
+) -> None:
+    """Benchmark embedding model load and encode speed."""
+    models = model or [PLAMO_MODEL, SARASHINA_BENCHMARK_MODEL]
+    texts = load_benchmark_texts(input_file, documents=documents)
+    rows: list[dict[str, object]] = []
+    for model_name in models:
+        started_at = perf_counter()
+        provider = create_embedding_provider(
+            model_name=model_name,
+            device=device,
+            batch_size=batch_size,
+        )
+        provider_device = provider.device
+        synchronize_torch_device(provider_device)
+        load_seconds = perf_counter() - started_at
+        encode = benchmark_provider(
+            provider,
+            texts,
+            task=task,
+            warmup=warmup,
+            repeat=repeat,
+            synchronize=lambda device=provider_device: synchronize_torch_device(device),
+        )
+        rows.append(
+            {
+                "model": provider.model_name,
+                "backend": provider.backend,
+                "device": provider.device,
+                "batch_size": provider.batch_size,
+                "prefix_policy": provider.prefix_policy,
+                "dim": provider.dim,
+                "task": task,
+                "documents": len(texts) if task == "passage" else 1,
+                "input_chars": sum(len(text) for text in texts)
+                if task == "passage"
+                else len(texts[0]),
+                "load_seconds": load_seconds,
+                "encode": encode,
+            }
+        )
+    if json_output:
+        console.print(as_json(rows))
+        return
+    for row in rows:
+        encode = cast(dict[str, Any], row["encode"])
+        load_seconds = cast(float, row["load_seconds"])
+        typer.echo(
+            " ".join(
+                [
+                    f"model={quote(str(row['model']))}",
+                    f"backend={row['backend']}",
+                    f"device={row['device']}",
+                    f"batch_size={row['batch_size']}",
+                    f"task={row['task']}",
+                    f"documents={row['documents']}",
+                    f"dim={row['dim']}",
+                    f"load_seconds={load_seconds:.4f}",
+                    f"mean_seconds={float(encode['mean_seconds']):.4f}",
+                    f"vectors_per_second={float(encode['vectors_per_second']):.2f}",
+                    f"chars_per_second={float(encode['chars_per_second']):.2f}",
+                ]
+            )
+        )
 
 
 class RichIndexProgress:
