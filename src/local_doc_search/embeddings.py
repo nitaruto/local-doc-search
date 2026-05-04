@@ -54,6 +54,7 @@ class SentenceTransformerEmbeddingProvider:
             self.model_name,
             device=self.device,
             trust_remote_code=requires_trust_remote_code(self.model_name),
+            model_kwargs=sentence_transformer_model_kwargs(self.model_name),
         )
         dim = self._model.get_sentence_embedding_dimension()
         if dim is None:
@@ -236,6 +237,14 @@ def prefix_policy_for_model(model_name: str) -> str:
     if model_name == PLAMO_MODEL:
         return "plamo"
     return "e5"
+
+
+def sentence_transformer_model_kwargs(model_name: str) -> dict[str, object] | None:
+    if model_name.startswith(SARASHINA_V2_PREFIX):
+        import torch
+
+        return {"torch_dtype": torch.bfloat16}
+    return None
 
 
 def prefix_query(text: str, prefix_policy: str) -> str:

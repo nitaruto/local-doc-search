@@ -50,6 +50,7 @@ from local_doc_search.embeddings import (
     prefix_query,
     refresh_plamo_rotary_cache,
     resolve_device,
+    sentence_transformer_model_kwargs,
     tensor_to_vectors,
 )
 from local_doc_search.indexer import (
@@ -1693,6 +1694,15 @@ def test_model_prefix_policy() -> None:
     assert prefix_policy_for_model("pfnet/plamo-embedding-1b") == "plamo"
     assert prefix_query("検索", "plamo") == "検索"
     assert prefix_passage("文章", "plamo") == "文章"
+
+
+def test_sarashina_sentence_transformer_uses_bfloat16() -> None:
+    import torch
+
+    kwargs = sentence_transformer_model_kwargs("sbintuitions/sarashina-embedding-v2-1b")
+
+    assert kwargs == {"torch_dtype": torch.bfloat16}
+    assert sentence_transformer_model_kwargs("cl-nagoya/ruri-v3-310m") is None
 
 
 def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPatch) -> None:
