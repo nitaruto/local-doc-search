@@ -57,7 +57,7 @@ class SentenceTransformerEmbeddingProvider:
             self.model_name,
             device=self.device,
             trust_remote_code=requires_trust_remote_code(self.model_name),
-            model_kwargs=sentence_transformer_model_kwargs(self.model_name),
+            model_kwargs=sentence_transformer_model_kwargs(self.model_name, self.device),
         )
         dim = sentence_transformer_known_dimension(self.model_name, self._model)
         if dim is None:
@@ -244,8 +244,10 @@ def prefix_policy_for_model(model_name: str) -> str:
     return "e5"
 
 
-def sentence_transformer_model_kwargs(model_name: str) -> dict[str, object] | None:
-    if model_name.startswith(SARASHINA_V2_PREFIX):
+def sentence_transformer_model_kwargs(
+    model_name: str, device: RuntimeDevice | None = None
+) -> dict[str, object] | None:
+    if model_name.startswith(SARASHINA_V2_PREFIX) and device != "mps":
         import torch
 
         return {"torch_dtype": torch.bfloat16}

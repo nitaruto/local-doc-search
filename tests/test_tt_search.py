@@ -1700,9 +1700,13 @@ def test_model_prefix_policy() -> None:
 def test_sarashina_sentence_transformer_uses_bfloat16() -> None:
     import torch
 
-    kwargs = sentence_transformer_model_kwargs("sbintuitions/sarashina-embedding-v2-1b")
+    kwargs = sentence_transformer_model_kwargs("sbintuitions/sarashina-embedding-v2-1b", "cpu")
 
     assert kwargs == {"torch_dtype": torch.bfloat16}
+    assert (
+        sentence_transformer_model_kwargs("sbintuitions/sarashina-embedding-v2-1b", "mps")
+        is None
+    )
     assert sentence_transformer_model_kwargs("cl-nagoya/ruri-v3-310m") is None
 
 
