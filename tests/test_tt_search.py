@@ -50,6 +50,7 @@ from local_doc_search.embeddings import (
     prefix_query,
     refresh_plamo_rotary_cache,
     resolve_device,
+    sentence_transformer_known_dimension,
     sentence_transformer_model_kwargs,
     tensor_to_vectors,
 )
@@ -1703,6 +1704,11 @@ def test_sarashina_sentence_transformer_uses_bfloat16() -> None:
 
     assert kwargs == {"torch_dtype": torch.bfloat16}
     assert sentence_transformer_model_kwargs("cl-nagoya/ruri-v3-310m") is None
+
+
+def test_sarashina_sentence_transformer_uses_known_dimension() -> None:
+    assert sentence_transformer_known_dimension("sbintuitions/sarashina-embedding-v2-1b") == 1792
+    assert sentence_transformer_known_dimension("cl-nagoya/ruri-v3-310m") is None
 
 
 def test_plamo_provider_uses_custom_encode_methods(monkeypatch: pytest.MonkeyPatch) -> None:

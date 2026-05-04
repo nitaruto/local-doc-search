@@ -14,6 +14,9 @@ PLAMO_MODEL = "pfnet/plamo-embedding-1b"
 PLAMO_BACKEND = "plamo-custom"
 PLAMO_RETRY_ATTEMPTS = 5
 SARASHINA_V2_PREFIX = "sbintuitions/sarashina-embedding-v2-"
+SARASHINA_V2_DIMENSIONS = {
+    "sbintuitions/sarashina-embedding-v2-1b": 1792,
+}
 SARASHINA_V2_RETRIEVAL_INSTRUCTION = (
     "質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。"
 )
@@ -56,7 +59,9 @@ class SentenceTransformerEmbeddingProvider:
             trust_remote_code=requires_trust_remote_code(self.model_name),
             model_kwargs=sentence_transformer_model_kwargs(self.model_name),
         )
-        dim = self._model.get_sentence_embedding_dimension()
+        dim = sentence_transformer_known_dimension(self.model_name, self._model)
+        if dim is None:
+            dim = self._model.get_sentence_embedding_dimension()
         if dim is None:
             sample = self._model.encode(
                 [prefix_query("dimension probe", self.prefix_policy)],
@@ -245,6 +250,30 @@ def sentence_transformer_model_kwargs(model_name: str) -> dict[str, object] | No
 
         return {"torch_dtype": torch.bfloat16}
     return None
+
+
+def sentence_transformer_known_dimension(
+    model_name: str, model: object | None = None
+) -> int | None:
+    known = SARASHINA_V2_DIMENSIONS.get(model_name)
+    if known is not None:
+        return known
+    if not model_name.startswith(SARASHINA_V2_PREFIX) or model is None:
+        return None
+    return sentence_transformer_hidden_size(model)
+
+
+def sentence_transformer_hidden_size(model: object) -> int | None:
+    try:
+        transformer = cast(Any, model)[0]
+    except (KeyError, IndexError, TypeError):
+        return None
+    auto_model = getattr(transformer, "auto_model", None)
+    config = getattr(auto_model, "config", None)
+    hidden_size = getattr(config, "hidden_size", None)
+    if hidden_size is None:
+        return None
+    return int(hidden_size)
 
 
 def prefix_query(text: str, prefix_policy: str) -> str:
