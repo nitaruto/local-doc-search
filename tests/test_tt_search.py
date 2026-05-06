@@ -1684,6 +1684,18 @@ def test_model_prefix_policy() -> None:
     assert prefix_query("検索", "ruri-v3") == "検索クエリ: 検索"
     assert prefix_passage("文章", "ruri-v3") == "検索文書: 文章"
 
+    assert prefix_policy_for_model("Qwen/Qwen3-Embedding-0.6B") == "qwen3"
+    assert (
+        prefix_query("検索", "qwen3")
+        == "Instruct: Given a web search query, retrieve relevant passages that answer the query\n"
+        "Query:検索"
+    )
+    assert prefix_passage("文章", "qwen3") == "文章"
+
+    assert prefix_policy_for_model("BAAI/bge-m3") == "bge-m3"
+    assert prefix_query("検索", "bge-m3") == "検索"
+    assert prefix_passage("文章", "bge-m3") == "文章"
+
     assert prefix_policy_for_model("sbintuitions/sarashina-embedding-v2-1b") == "sarashina-v2"
     assert (
         prefix_query("検索", "sarashina-v2")
@@ -1712,6 +1724,8 @@ def test_sarashina_sentence_transformer_uses_bfloat16() -> None:
 
 def test_sarashina_sentence_transformer_uses_known_dimension() -> None:
     assert sentence_transformer_known_dimension("sbintuitions/sarashina-embedding-v2-1b") == 1792
+    assert sentence_transformer_known_dimension("Qwen/Qwen3-Embedding-0.6B") == 1024
+    assert sentence_transformer_known_dimension("BAAI/bge-m3") == 1024
     assert sentence_transformer_known_dimension("cl-nagoya/ruri-v3-310m") is None
 
 

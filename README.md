@@ -43,6 +43,9 @@ uv run local-doc-search index --db notes.sqlite --root ~/notes --exclude '^archi
 The default embedding model is `intfloat/multilingual-e5-small`.
 Search uses the embedding model stored in the SQLite DB at index time.
 For Japanese-focused quality, `cl-nagoya/ruri-v3-*` is the preferred experimental upgrade path.
+`Qwen/Qwen3-Embedding-0.6B` and `BAAI/bge-m3` are supported through the SentenceTransformer
+backend as multilingual candidates. Qwen3 uses its retrieval instruction on queries and no
+document prefix; bge-m3 uses no local prefix.
 `sbintuitions/sarashina-embedding-v2-1b` is also supported through the SentenceTransformer
 backend with its recommended retrieval prefixes. Check the model license before use because
 it is distributed under the Sarashina non-commercial license.
@@ -70,6 +73,8 @@ Apple Silicon Metal acceleration can be selected with `--device`.
 
 ```bash
 uv run local-doc-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model Qwen/Qwen3-Embedding-0.6B --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model BAAI/bge-m3 --device auto
 uv run local-doc-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
 uv run local-doc-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
@@ -81,6 +86,8 @@ building an index.
 
 ```bash
 uv run local-doc-search benchmark-embeddings \
+  --model Qwen/Qwen3-Embedding-0.6B \
+  --model BAAI/bge-m3 \
   --model pfnet/plamo-embedding-1b \
   --model sbintuitions/sarashina-embedding-v2-1b \
   --device mps \

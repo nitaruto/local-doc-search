@@ -20,6 +20,15 @@ SARASHINA_V2_DIMENSIONS = {
 SARASHINA_V2_RETRIEVAL_INSTRUCTION = (
     "質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。"
 )
+QWEN3_EMBEDDING_PREFIX = "Qwen/Qwen3-Embedding-"
+QWEN3_EMBEDDING_DIMENSIONS = {
+    "Qwen/Qwen3-Embedding-0.6B": 1024,
+}
+QWEN3_RETRIEVAL_INSTRUCTION = (
+    "Given a web search query, retrieve relevant passages that answer the query"
+)
+BGE_M3_MODEL = "BAAI/bge-m3"
+BGE_M3_DIMENSION = 1024
 DeviceOption = Literal["auto", "cpu", "mps"]
 RuntimeDevice = Literal["cpu", "mps"]
 
@@ -237,6 +246,10 @@ def mps_is_available() -> bool:
 def prefix_policy_for_model(model_name: str) -> str:
     if model_name.startswith("cl-nagoya/ruri-v3-"):
         return "ruri-v3"
+    if model_name.startswith(QWEN3_EMBEDDING_PREFIX):
+        return "qwen3"
+    if model_name == BGE_M3_MODEL:
+        return "bge-m3"
     if model_name.startswith(SARASHINA_V2_PREFIX):
         return "sarashina-v2"
     if model_name == PLAMO_MODEL:
@@ -257,6 +270,11 @@ def sentence_transformer_model_kwargs(
 def sentence_transformer_known_dimension(
     model_name: str, model: object | None = None
 ) -> int | None:
+    qwen3_known = QWEN3_EMBEDDING_DIMENSIONS.get(model_name)
+    if qwen3_known is not None:
+        return qwen3_known
+    if model_name == BGE_M3_MODEL:
+        return BGE_M3_DIMENSION
     known = SARASHINA_V2_DIMENSIONS.get(model_name)
     if known is not None:
         return known
@@ -281,6 +299,8 @@ def sentence_transformer_hidden_size(model: object) -> int | None:
 def prefix_query(text: str, prefix_policy: str) -> str:
     if prefix_policy == "ruri-v3":
         return f"検索クエリ: {text}"
+    if prefix_policy == "qwen3":
+        return f"Instruct: {QWEN3_RETRIEVAL_INSTRUCTION}\nQuery:{text}"
     if prefix_policy == "sarashina-v2":
         return f"task: {SARASHINA_V2_RETRIEVAL_INSTRUCTION}\nquery: {text}"
     if prefix_policy == "e5":

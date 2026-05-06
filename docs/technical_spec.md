@@ -150,6 +150,8 @@ benchmark時:
 
 - `intfloat/multilingual-e5-small`: query=`query: `, passage=`passage: `
 - `cl-nagoya/ruri-v3-*`: query=`検索クエリ: `, passage=`検索文書: `
+- `Qwen/Qwen3-Embedding-0.6B`: query=`Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:`, passageはprefixなし。既知dimensionは1024。
+- `BAAI/bge-m3`: query/passageともprefixなし。既知dimensionは1024。
 - `sbintuitions/sarashina-embedding-v2-*`: query=`task: 質問を与えるので、その質問に答えるのに役立つ関連文書を検索してください。\nquery: `, passage=`text: `
 - `pfnet/plamo-embedding-1b`: `plamo-custom` backendでmodel card推奨の `AutoModel.encode_query` / `AutoModel.encode_document` を使う。prefixはPLaMo model側で扱うためlocal-doc-search側では付与しない。
 
@@ -157,13 +159,14 @@ benchmark時:
 
 - 安定運用では `intfloat/multilingual-e5-small` を基本とする。
 - 日本語精度を重視する場合は `cl-nagoya/ruri-v3-*` を優先候補とする。
+- `Qwen/Qwen3-Embedding-0.6B` と `BAAI/bge-m3` は多言語候補としてSentenceTransformer backendで利用できる。Qwen3はqueryだけretrieval instructionを付与し、documentはprefixなしでindexする。bge-m3はquery/documentともlocal-doc-search側ではprefixを付与しない。
 - `sbintuitions/sarashina-embedding-v2-1b` はSentenceTransformer backendで利用できる日本語重視の候補。公式model cardのRetrieval/Reranking用prefixを付与する。Sarashina Model NonCommercial License Agreementで配布されているため用途に注意する。
 - `pfnet/plamo-embedding-1b` は `plamo-custom` backendで対応する。過去に確認した非有限値対策として検出・warning・retryは残すが、通常の失敗を前提にした扱いではない。
 
 現在のbackend:
 
 - `sentence-transformers`
-  - `intfloat/multilingual-e5-small`, `cl-nagoya/ruri-v3-*`, `sbintuitions/sarashina-embedding-v2-*` など。
+  - `intfloat/multilingual-e5-small`, `cl-nagoya/ruri-v3-*`, `Qwen/Qwen3-Embedding-0.6B`, `BAAI/bge-m3`, `sbintuitions/sarashina-embedding-v2-*` など。
 - `plamo-custom`
   - `pfnet/plamo-embedding-1b` 専用。
   - `AutoTokenizer.from_pretrained(..., trust_remote_code=True)` と `AutoModel.from_pretrained(..., trust_remote_code=True)` を使う。
@@ -180,6 +183,8 @@ benchmark時:
 ```bash
 uv run local-doc-search index --db notes.sqlite --root ~/notes --device auto --batch-size 32
 uv run local-doc-search index --db notes.sqlite --root ~/notes --model cl-nagoya/ruri-v3-70m --device mps
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model Qwen/Qwen3-Embedding-0.6B --device auto
+uv run local-doc-search index --db notes.sqlite --root ~/notes --model BAAI/bge-m3 --device auto
 uv run local-doc-search index --db notes.sqlite --root ~/notes --model sbintuitions/sarashina-embedding-v2-1b --device auto
 uv run local-doc-search index --db notes.sqlite --root ~/notes --model pfnet/plamo-embedding-1b --device auto
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --mode vec --device auto
