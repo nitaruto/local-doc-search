@@ -93,10 +93,22 @@ def index(
         int, typer.Option("--batch-size", min=1, help="Embedding batch size for indexing.")
     ] = DEFAULT_BATCH_SIZE,
     rebuild: Annotated[bool, typer.Option("--rebuild", help="Clear existing index first.")] = False,
+    rebuild_offline: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild-offline",
+            help=(
+                "Clear existing index and commit after each file. "
+                "Leaves a partial DB if interrupted; use only when the DB is not served."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Build or update a search database."""
     if not root:
         raise typer.BadParameter("At least one --root is required")
+    if rebuild and rebuild_offline:
+        raise typer.BadParameter("--rebuild and --rebuild-offline cannot be used together")
     print_index_start_summary(
         command="index",
         db=db,
@@ -105,6 +117,7 @@ def index(
         device=device,
         batch_size=batch_size,
         rebuild=rebuild,
+        rebuild_offline=rebuild_offline,
         extensions=ext,
         exclude_patterns=exclude,
     )
@@ -130,6 +143,7 @@ def index(
                 extensions=ext,
                 embedder=embedder,
                 rebuild=rebuild,
+                rebuild_offline=rebuild_offline,
                 progress=reporter,
                 exclude_patterns=exclude,
             )
@@ -372,6 +386,7 @@ def print_index_start_summary(
     device: DeviceOption,
     batch_size: int,
     rebuild: bool,
+    rebuild_offline: bool,
     extensions: list[str] | None,
     exclude_patterns: list[str] | None,
 ) -> None:
@@ -381,6 +396,7 @@ def print_index_start_summary(
     typer.echo(f"device={device}")
     typer.echo(f"batch_size={batch_size}")
     typer.echo(f"rebuild={str(rebuild).lower()}")
+    typer.echo(f"rebuild_offline={str(rebuild_offline).lower()}")
     typer.echo(f"roots={','.join(str(root.expanduser()) for root in roots)}")
     typer.echo(f"extensions={','.join(extensions) if extensions else 'default'}")
     typer.echo(f"exclude={','.join(exclude_patterns) if exclude_patterns else ''}")
@@ -544,8 +560,20 @@ def codex_index_cmd(
         int, typer.Option("--batch-size", min=1, help="Embedding batch size for indexing.")
     ] = DEFAULT_BATCH_SIZE,
     rebuild: Annotated[bool, typer.Option("--rebuild", help="Clear existing index first.")] = False,
+    rebuild_offline: Annotated[
+        bool,
+        typer.Option(
+            "--rebuild-offline",
+            help=(
+                "Clear existing index and commit after each file. "
+                "Leaves a partial DB if interrupted; use only when the DB is not served."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Build or update the fixed Codex history search database."""
+    if rebuild and rebuild_offline:
+        raise typer.BadParameter("--rebuild and --rebuild-offline cannot be used together")
     try:
         roots = validate_codex_roots(root or [CODEX_SESSIONS_ROOT])
     except ValueError as exc:
@@ -558,6 +586,7 @@ def codex_index_cmd(
         device=device,
         batch_size=batch_size,
         rebuild=rebuild,
+        rebuild_offline=rebuild_offline,
         extensions=None,
         exclude_patterns=None,
     )
@@ -582,6 +611,7 @@ def codex_index_cmd(
                 roots=roots,
                 embedder=embedder,
                 rebuild=rebuild,
+                rebuild_offline=rebuild_offline,
                 progress=reporter,
             )
     console.print(

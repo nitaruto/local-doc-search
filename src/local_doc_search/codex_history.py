@@ -136,8 +136,11 @@ def index_codex_sessions(
     roots: list[Path],
     embedder: EmbeddingProvider,
     rebuild: bool = False,
+    rebuild_offline: bool = False,
     progress: IndexProgress | None = None,
 ) -> IndexStats:
+    if rebuild and rebuild_offline:
+        raise ValueError("--rebuild and --rebuild-offline cannot be used together")
     roots = validate_codex_roots(roots)
     paths = iter_codex_session_files(roots)
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
@@ -149,12 +152,17 @@ def index_codex_sessions(
         prefix_policy=getattr(embedder, "prefix_policy", "unknown"),
     )
     set_metadata(con, "index_kind", CODEX_HISTORY_INDEX_KIND)
-    if rebuild:
+    commit_per_file = not rebuild or rebuild_offline
+    if rebuild or rebuild_offline:
         clear_index(con)
+        if rebuild_offline:
+            con.commit()
 
     if progress is not None:
         progress.on_scan_complete(len(paths))
-    removed = remove_missing_files(con, {str(path) for path in paths})
+    removed = remove_missing_files(
+        con, {str(path) for path in paths}, commit_each_file=commit_per_file
+    )
     indexed_files = 0
     skipped_files = 0
     chunk_count = 0
@@ -178,6 +186,8 @@ def index_codex_sessions(
         if progress is not None:
             progress.on_embedding_start(path=indexed.path, chunks=len(chunks))
         upsert_file(con, indexed, chunks, embedder, progress=progress)
+        if commit_per_file:
+            con.commit()
         indexed_files += 1
         chunk_count += len(chunks)
         if progress is not None:

@@ -11,7 +11,11 @@ It builds a SQLite database from files under one or more directories and combine
 Indexing shows progress for discovered files, skipped/unchanged files, embedding batches,
 and processed chunks per second.
 Indexing also prints a start summary with the command, DB, roots, model, device,
-batch size, rebuild flag, extensions, and exclude patterns.
+batch size, rebuild flags, extensions, and exclude patterns.
+Normal incremental indexing commits after each changed file so interrupted runs keep completed
+file updates. `--rebuild` keeps one transaction for consistency, while `--rebuild-offline`
+clears the index and commits after each file for resumable offline rebuilds. Do not use
+`--rebuild-offline` for a DB being served because interruption leaves a partial DB.
 Short paragraphs are packed into chunks up to 600 characters by default; very long
 paragraphs are split with 120-character overlap.
 Packed paragraph chunks overlap by one paragraph when possible.
@@ -25,6 +29,7 @@ Markdown fenced code blocks are skipped when building chunks.
 
 ```bash
 uv run local-doc-search index --db notes.sqlite --root ~/notes --ext .md --ext .txt
+uv run local-doc-search index --db notes.sqlite --root ~/notes --rebuild-offline
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容"
 uv run local-doc-search search --db notes.sqlite --pattern "検索 OR sqlite"
 uv run local-doc-search search --db notes.sqlite --query "検索したい内容" --pattern "sqlite OR fts" --mode vec-fts --explain

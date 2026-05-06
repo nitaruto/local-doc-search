@@ -484,9 +484,12 @@ def index_paths(
     extensions: list[str] | None,
     embedder: EmbeddingProvider,
     rebuild: bool = False,
+    rebuild_offline: bool = False,
     progress: IndexProgress | None = None,
     exclude_patterns: list[str] | None = None,
 ) -> IndexStats:
+    if rebuild and rebuild_offline:
+        raise ValueError("--rebuild and --rebuild-offline cannot be used together")
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
     set_embedding_metadata(
         con,
@@ -495,8 +498,11 @@ def index_paths(
         batch_size=getattr(embedder, "batch_size", 0),
         prefix_policy=getattr(embedder, "prefix_policy", "unknown"),
     )
-    if rebuild:
+    commit_per_file = not rebuild or rebuild_offline
+    if rebuild or rebuild_offline:
         clear_index(con)
+        if rebuild_offline:
+            con.commit()
 
     allowed = normalize_extensions(extensions)
     compiled_exclude_patterns = compile_exclude_patterns(exclude_patterns)
@@ -505,7 +511,7 @@ def index_paths(
         progress.on_scan_complete(len(paths))
     seen = {str(candidate.path) for candidate in paths}
     stats = IndexStats(scanned_files=len(paths))
-    removed = remove_missing_files(con, seen)
+    removed = remove_missing_files(con, seen, commit_each_file=commit_per_file)
 
     indexed_files = 0
     skipped_files = 0
@@ -525,6 +531,8 @@ def index_paths(
         if progress is not None:
             progress.on_embedding_start(path=indexed.path, chunks=len(chunks))
         upsert_file(con, indexed, chunks, embedder, progress=progress)
+        if commit_per_file:
+            con.commit()
         indexed_files += 1
         chunk_count += len(chunks)
         if progress is not None:
@@ -547,12 +555,16 @@ def clear_index(con: sqlite3.Connection) -> None:
     con.execute("DELETE FROM files")
 
 
-def remove_missing_files(con: sqlite3.Connection, seen_paths: set[str]) -> int:
+def remove_missing_files(
+    con: sqlite3.Connection, seen_paths: set[str], *, commit_each_file: bool = False
+) -> int:
     rows = con.execute("SELECT id, path FROM files").fetchall()
     removed = 0
     for row in rows:
         if row["path"] not in seen_paths:
             delete_file(con, int(row["id"]))
+            if commit_each_file:
+                con.commit()
             removed += 1
     return removed
 

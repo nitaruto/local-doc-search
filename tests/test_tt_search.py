@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 from pathlib import Path
 from subprocess import CompletedProcess
 from types import SimpleNamespace
@@ -103,6 +104,19 @@ class FakeEmbedder:
                 lower.count("旅行") + lower.count("京都"),
             ]
         )
+
+
+class CommitCountingConnection:
+    def __init__(self, con: sqlite3.Connection) -> None:
+        self._con = con
+        self.commits = 0
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._con, name)
+
+    def commit(self) -> None:
+        self.commits += 1
+        self._con.commit()
 
 
 class RecordingProgress:
@@ -268,6 +282,78 @@ def test_index_excludes_relative_path_regex(tmp_path: Path) -> None:
     assert stats.scanned_files == 1
     assert stats.excluded_files == 2
     assert [row["relative_path"] for row in rows] == ["keep.md"]
+
+
+def test_index_commits_after_each_changed_file(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as raw:
+        con = CommitCountingConnection(raw)
+        stats = index_paths(
+            con,  # type: ignore[arg-type]
+            roots=list(sample_roots),
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+        )
+
+    assert stats.indexed_files == 2
+    assert con.commits == 2
+
+
+def test_index_rebuild_keeps_single_transaction(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as raw:
+        con = CommitCountingConnection(raw)
+        stats = index_paths(
+            con,  # type: ignore[arg-type]
+            roots=list(sample_roots),
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            rebuild=True,
+        )
+
+    assert stats.indexed_files == 2
+    assert con.commits == 0
+
+
+def test_index_rebuild_offline_commits_clear_and_each_file(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as raw:
+        con = CommitCountingConnection(raw)
+        stats = index_paths(
+            con,  # type: ignore[arg-type]
+            roots=list(sample_roots),
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            rebuild_offline=True,
+        )
+
+    assert stats.indexed_files == 2
+    assert con.commits == 3
+
+
+def test_index_rebuild_flags_are_mutually_exclusive(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db = tmp_path / "index.sqlite"
+
+    with connect(db) as con, pytest.raises(ValueError, match="cannot be used together"):
+        index_paths(
+            con,
+            roots=list(sample_roots),
+            extensions=[".md"],
+            embedder=FakeEmbedder(),
+            rebuild=True,
+            rebuild_offline=True,
+        )
 
 
 def test_list_indexed_files_returns_relative_path_order(
@@ -481,6 +567,7 @@ def test_index_start_summary_includes_target_roots(
         device="cpu",
         batch_size=8,
         rebuild=False,
+        rebuild_offline=True,
         extensions=[".md"],
         exclude_patterns=["^archive/"],
     )
@@ -493,6 +580,7 @@ def test_index_start_summary_includes_target_roots(
     assert "device=cpu" in output
     assert "batch_size=8" in output
     assert "rebuild=false" in output
+    assert "rebuild_offline=true" in output
     assert "extensions=.md" in output
     assert "exclude=^archive/" in output
 
@@ -1283,6 +1371,25 @@ def test_codex_index_fast_skips_unchanged_files(tmp_path: Path) -> None:
 
     assert second.indexed_files == 0
     assert second.skipped_files == 1
+
+
+def test_codex_index_rebuild_offline_commits_clear_and_each_file(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    db = tmp_path / "codex-history.sqlite"
+
+    with connect(db) as raw:
+        con = CommitCountingConnection(raw)
+        stats = index_codex_sessions(
+            con,  # type: ignore[arg-type]
+            roots=[root],
+            embedder=FakeEmbedder(),
+            rebuild_offline=True,
+        )
+
+    assert stats.indexed_files == 1
+    assert con.commits == 2
 
 
 def test_codex_indexed_file_splits_long_turns(tmp_path: Path) -> None:

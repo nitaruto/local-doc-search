@@ -56,7 +56,7 @@ SQLite DBには以下を保存する。
 
 `local-doc-search index --db path.sqlite --root DIR [--root DIR...] [--ext .md ...] [--exclude REGEX ...]` でindexする。
 
-index開始時はcron logや長時間実行時の識別のため、`command`, `db`, `roots`, `model`, `device`, `batch_size`, `rebuild`, `extensions`, `exclude` を標準出力に表示する。
+index開始時はcron logや長時間実行時の識別のため、`command`, `db`, `roots`, `model`, `device`, `batch_size`, `rebuild`, `rebuild_offline`, `extensions`, `exclude` を標準出力に表示する。
 
 処理内容:
 
@@ -66,6 +66,10 @@ index開始時はcron logや長時間実行時の識別のため、`command`, `d
 - デフォルト対象拡張子は `.txt`, `.md`, `.markdown`, `.rst`。
 - `--exclude` はrootからの相対pathをPOSIX形式にした文字列に対してPython regex `re.search()` で判定する。
 - `--exclude` は複数指定でき、1つでもmatchしたファイルはindex対象外にする。
+- 通常の差分indexは、追加・更新・削除されたファイル単位でcommitする。中断された場合も、その実行で完了済みのファイル更新はDBに残る。
+- `--rebuild` は既存indexをclearしてから再構築するが、1回のtransactionで最後にまとめてcommitする。中断時は旧DBが残ることを優先する。
+- `--rebuild-offline` は既存indexをclearした時点でcommitし、その後はファイル単位でcommitする。長時間rebuildの再開性を優先するoffline用途のため、中断されると部分DBが残る。server/MCPから読まれているDBには使わない。
+- `--rebuild` と `--rebuild-offline` は同時指定できない。
 - `.git`, `.venv`, `__pycache__`, dot directory は走査対象から除外する。
 - UTF-8 / UTF-8 BOMとして読めないファイルはskipする。
 - ファイル本文は空行区切りの段落を抽出し、既定600文字の上限以内で複数段落を1chunkへまとめる。
