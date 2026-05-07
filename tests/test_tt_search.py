@@ -715,6 +715,64 @@ def test_tui_search_opens_selected_result(
     assert calls[1] == ["/usr/bin/less", "+2", str(source)]
 
 
+def test_codex_tui_search_opens_selected_session(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indexed_path = tmp_path / "indexed.jsonl"
+    indexed_path.write_text("indexed\n", encoding="utf-8")
+    session_path = tmp_path / "session.jsonl"
+    session_path.write_text("one\ntwo\nthree\n", encoding="utf-8")
+    row = SearchResult(
+        db_path=str(tmp_path / "codex-history.sqlite"),
+        chunk_id=1,
+        path=str(indexed_path),
+        relative_path="session.jsonl",
+        chunk_index=0,
+        text="two",
+        start_line=1,
+        end_line=1,
+        start_offset=0,
+        end_offset=3,
+        score=0.8,
+        source="fts",
+        session_id="session-id",
+        cwd="/repo",
+        role="assistant",
+        turn_id="turn-id",
+        timestamp="2026-05-07T00:00:00Z",
+        session_path=str(session_path),
+        line_no=2,
+    )
+    calls: list[list[str]] = []
+    search_calls: list[dict[str, object]] = []
+
+    def fake_search(**kwargs: object) -> list[SearchResult]:
+        search_calls.append(kwargs)
+        return [row]
+
+    monkeypatch.setattr(cli, "run_codex_search", fake_search)
+    monkeypatch.setattr(cli.shutil, "which", lambda name: f"/usr/bin/{name}")
+
+    def fake_run(cmd: list[str], **kwargs: object) -> CompletedProcess[str]:
+        calls.append(cmd)
+        if cmd[0] == "fzf":
+            return CompletedProcess(cmd, 0, stdout=f"{cli.fzf_line(row)}\n")
+        return CompletedProcess(cmd, 0)
+
+    monkeypatch.setattr(cli.subprocess, "run", fake_run)
+
+    with pytest.raises(typer.Exit) as exc_info:
+        cli.codex_tui_search_cmd(query="codex", mode="fts")
+
+    assert exc_info.value.exit_code == 0
+    assert search_calls[0]["query"] == "codex"
+    assert search_calls[0]["mode"] == "fts"
+    assert calls[0][0] == "fzf"
+    assert "--preview-window=down:60%" in calls[0]
+    assert calls[1] == ["/usr/bin/less", "+2", str(session_path)]
+
+
 def test_tui_search_rejects_missing_fzf(monkeypatch: pytest.MonkeyPatch) -> None:
     row = SearchResult(
         db_path=None,
@@ -747,6 +805,8 @@ def test_preview_command_places_hit_near_upper_preview() -> None:
 
     assert "before = max(context // 6, 3)" in command
     assert "after = max(context - before, 1)" in command
+    assert 'path = item.get("session_path") or item["path"]' in command
+    assert 'line_no = item.get("line_no")' in command
 
 
 def test_search_command_rejects_multiple_subset_live_servers(
@@ -1533,6 +1593,14 @@ def test_codex_search_help_has_no_model_option() -> None:
 
     assert result.exit_code == 0
     assert "--model" not in result.output
+
+
+def test_codex_tui_search_help_has_no_model_option() -> None:
+    result = runner.invoke(cli.app, ["codex-tui-search", "--help"])
+
+    assert result.exit_code == 0
+    assert "--model" not in result.output
+    assert "--preview-window" in result.output
 
 
 def test_chunk_text_packs_short_paragraphs_until_max_chars() -> None:

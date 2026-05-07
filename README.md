@@ -121,6 +121,7 @@ uv run local-doc-search codex-index --rebuild
 uv run local-doc-search codex-server --device auto
 uv run local-doc-search codex-search --query "以前相談した内容" --mode fts-vec
 uv run local-doc-search codex-search --pattern "実装 OR エラー"
+uv run local-doc-search codex-tui-search --query "以前相談した内容" --mode fts-vec
 uv run local-doc-search codex-search --query "以前相談した内容" --json
 ```
 
