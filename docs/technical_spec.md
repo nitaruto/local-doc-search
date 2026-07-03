@@ -212,7 +212,7 @@ query入力:
 
 - `--query`
   - semantic/vector検索用の自然文query。
-  - FTSで使う場合はFTS5構文ではなくリテラルphraseとして扱う。
+  - FTSで使う場合はFTS5構文ではなく、最大128個のtrigram tokenを `OR` で結合したliteral queryとして扱う。
 - `--pattern`
   - SQLite FTS5 `MATCH` に渡すpattern。
   - `AND`, `OR`, `NOT`, `NEAR`, prefixなどFTS5 query syntaxをそのまま使える。
@@ -226,7 +226,7 @@ mode省略時の推定:
 hybrid時の入力:
 
 - vector側は `--query` を使う。
-- FTS側は `--pattern` があれば `--pattern` を使い、無ければ `--query` をリテラルphraseとして使う。
+- FTS側は `--pattern` があれば `--pattern` を使い、無ければ `--query` をtrigram tokenの `OR` queryとして使う。
 - `--query` + `--pattern` + `--mode fts-vec` は、FTS候補を `--pattern` で取得し、`--query` のvectorでrerankする。
 
 3文字未満のリテラルqueryはFTS5 trigramの `MATCH` では扱いづらいため、`LIKE` fallbackで候補取得または文字一致スコア計算を行う。`--pattern` 指定時はFTS5構文を尊重し、LIKE fallbackしない。
@@ -443,7 +443,7 @@ cwd = "/absolute/path/to/local_search"
 - `codex_session_search` toolは固定DB `~/.codex/local-doc-search/codex-history.sqlite` のCodex session履歴を検索する。
 - MCP serverもHTTP serverと同様にDB更新を検出し、embedding metadata互換ならreloadして検索を続ける。
 - `search` / `codex_session_search` toolの引数:
-  - `query`: semantic/vector検索用文字列。
+  - `query`: semantic/vector検索用文字列。FTS modeで `pattern` が無い場合は、最大128個のtrigram tokenを `OR` で結合したliteral queryとして使う。
   - `pattern`: SQLite FTS5 `MATCH` に渡すpattern。`AND`, `OR`, `NOT`, `NEAR` などを使える。
   - `query` と `pattern` の少なくとも一方が必須。
   - `mode`: `fts`, `vec`, `fts-vec`, `vec-fts`。省略時はCLIと同じく、`query`のみで`vec`、`pattern`のみで`fts`、両方指定で`vec-fts`。

@@ -555,8 +555,23 @@ def escape_like(query: str) -> str:
 def fts_match_query(query: str, *, is_pattern: bool) -> str:
     if is_pattern:
         return query
-    return f'"{escape_fts_phrase(query)}"'
+    return " OR ".join(f'"{escape_fts_phrase(term)}"' for term in trigram_query_terms(query))
 
 
 def escape_fts_phrase(query: str) -> str:
     return query.replace('"', '""')
+
+
+def trigram_query_terms(query: str, *, max_terms: int = 128) -> list[str]:
+    query = query.strip()
+    terms: list[str] = []
+    seen: set[str] = set()
+    for index in range(max(0, len(query) - 2)):
+        term = query[index : index + 3]
+        if term in seen:
+            continue
+        terms.append(term)
+        seen.add(term)
+        if len(terms) >= max_terms:
+            break
+    return terms

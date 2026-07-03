@@ -236,7 +236,10 @@ def search_input_schema() -> dict[str, Any]:
         "properties": {
             "query": {
                 "type": "string",
-                "description": "Semantic/vector search query.",
+                "description": (
+                    "Semantic/vector search query. In FTS modes without pattern, "
+                    "it is converted to an OR query over up to 128 trigram tokens."
+                ),
             },
             "pattern": {
                 "type": "string",

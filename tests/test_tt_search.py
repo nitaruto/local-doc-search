@@ -71,10 +71,12 @@ from local_doc_search.mcp import (
 from local_doc_search.reload import ReloadableDbSet
 from local_doc_search.search import (
     SearchResult,
+    fts_match_query,
     require_vec_distance,
     resolve_search,
     search,
     search_many,
+    trigram_query_terms,
 )
 from local_doc_search.server import SearchRequestHandler
 
@@ -1218,7 +1220,32 @@ def test_fts_pattern_uses_match_syntax(tmp_path: Path, sample_roots: tuple[Path,
         "search.md",
         "travel.md",
     }
-    assert literal_results == []
+    assert {Path(result.path).name for result in literal_results} == {
+        "search.md",
+        "travel.md",
+    }
+
+
+def test_literal_fts_query_uses_trigram_or_terms() -> None:
+    assert fts_match_query("日本語検索", is_pattern=False) == (
+        '"日本語" OR "本語検" OR "語検索"'
+    )
+
+
+def test_literal_fts_query_escapes_each_trigram_term() -> None:
+    assert fts_match_query('ab"cd', is_pattern=False) == '"ab""" OR "b""c" OR """cd"'
+
+
+def test_pattern_fts_query_is_passed_through() -> None:
+    assert fts_match_query('"日本語検索" OR SQLite', is_pattern=True) == '"日本語検索" OR SQLite'
+
+
+def test_trigram_query_terms_deduplicates_and_limits() -> None:
+    assert trigram_query_terms("aaaaaa") == ["aaa"]
+    terms = trigram_query_terms("あ" * 140)
+    assert terms == ["あああ"]
+    unique_terms = trigram_query_terms("".join(chr(0x3040 + index) for index in range(140)))
+    assert len(unique_terms) == 128
 
 
 def test_hybrid_modes_return_results(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

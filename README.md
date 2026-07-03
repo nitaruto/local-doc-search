@@ -63,7 +63,9 @@ Search output also includes chunk line ranges so other agents can locate the hit
 `--query` is the semantic/vector query. `--pattern` is passed to SQLite FTS5 `MATCH` and can
 use FTS5 operators such as `AND`, `OR`, `NOT`, and `NEAR`. If `--mode` is omitted, query-only
 search defaults to `vec`, pattern-only search defaults to `fts`, and query+pattern defaults
-to `vec-fts`.
+to `vec-fts`. When `--query` is used by an FTS mode without `--pattern`, it is converted into
+an OR query over up to 128 trigram tokens instead of being treated as FTS5 syntax. Use
+`--pattern` for exact phrases or explicit FTS5 operators.
 `local-doc-search files` lists the files currently stored in the SQLite index, including `path`,
 `root_path`, `relative_path`, `size`, `mtime_ns`, and `content_hash`.
 Without `--json`, it prints one indexed file per line as `key=value` fields.
