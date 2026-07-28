@@ -165,6 +165,45 @@ by the MCP tools, including `~/.codex/local-doc-search/codex-history.sqlite` for
 [`docs/local-doc-search-server.plist.example`](docs/local-doc-search-server.plist.example)
 for a LaunchAgent template.
 
+Install the LaunchAgent once:
+
+```bash
+mkdir -p ~/Library/LaunchAgents
+cp docs/local-doc-search-server.plist.example \
+  ~/Library/LaunchAgents/local.local-doc-search.server.plist
+```
+
+Before registration, edit the copied plist:
+
+- Replace `/absolute/path/to/uv` with the output of `command -v uv`.
+- Replace the working directory and every `--db` value with absolute paths.
+- Include `~/.codex/local-doc-search/codex-history.sqlite` as an absolute path when
+  using `codex_session_search`.
+- Keep the plist port and the MCP `--server-url` port identical.
+
+Validate and register it in the current user's GUI launchd domain:
+
+```bash
+plutil -lint ~/Library/LaunchAgents/local.local-doc-search.server.plist
+launchctl bootstrap \
+  gui/$(id -u) \
+  ~/Library/LaunchAgents/local.local-doc-search.server.plist
+launchctl print gui/$(id -u)/local.local-doc-search.server
+```
+
+The example uses `RunAtLoad=false`, so registration does not start the model server.
+The MCP proxy starts it on the first tool call with `launchctl kickstart`. To apply
+later plist changes, unregister and register it again:
+
+```bash
+launchctl bootout \
+  gui/$(id -u) \
+  ~/Library/LaunchAgents/local.local-doc-search.server.plist
+launchctl bootstrap \
+  gui/$(id -u) \
+  ~/Library/LaunchAgents/local.local-doc-search.server.plist
+```
+
 Example Codex MCP configuration:
 
 ```toml
