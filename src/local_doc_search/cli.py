@@ -812,12 +812,40 @@ def mcp(
     device: Annotated[
         DeviceOption, typer.Option("--device", help="Embedding device: auto, cpu, or mps.")
     ] = "auto",
+    server_url: Annotated[
+        str | None,
+        typer.Option(
+            "--server-url",
+            help="Shared local-doc-search HTTP server URL. Enables lightweight proxy mode.",
+        ),
+    ] = None,
+    launchd_label: Annotated[
+        str | None,
+        typer.Option(
+            "--launchd-label",
+            help="LaunchAgent label to kickstart when the shared server is unavailable.",
+        ),
+    ] = None,
+    server_start_timeout: Annotated[
+        float,
+        typer.Option(
+            "--server-start-timeout",
+            min=0.1,
+            help="Seconds to wait for an automatically started shared server.",
+        ),
+    ] = 60.0,
 ) -> None:
     """Run a stdio MCP server for coding agents."""
     db_paths = normalize_db_paths(db)
     if not db_paths:
         raise typer.BadParameter("At least one --db is required")
-    run_mcp_server(db_paths, device=device)
+    run_mcp_server(
+        db_paths,
+        device=device,
+        server_url=server_url,
+        launchd_label=launchd_label,
+        server_start_timeout=server_start_timeout,
+    )
 
 
 def build_search_embedder(

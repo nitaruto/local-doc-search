@@ -5,6 +5,7 @@ import re
 import sqlite3
 from pathlib import Path
 from subprocess import CompletedProcess
+from threading import Lock
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -64,6 +65,7 @@ from local_doc_search.indexer import (
     strategy_for_path,
 )
 from local_doc_search.mcp import (
+    McpSearchProxy,
     McpSearchServer,
     codex_session_search_tool_definition,
     search_tool_definition,
@@ -901,7 +903,8 @@ def test_server_search_accepts_vector_query_payload(
     handler = object.__new__(SearchRequestHandler)
     state = SimpleNamespace(
         db_paths=[db],
-        embedder=FakeEmbedder(),
+        embedder_for_mode=lambda _: FakeEmbedder(),
+        vector_search_lock=Lock(),
         refresh_if_compatible=lambda: None,
         resolve_requested_db_paths=lambda _: [db],
     )
@@ -930,7 +933,7 @@ def test_server_search_limits_to_requested_db_paths(
     handler = object.__new__(SearchRequestHandler)
     state = SimpleNamespace(
         db_paths=[db1.resolve(), db2.resolve()],
-        embedder=FakeEmbedder(),
+        embedder_for_mode=lambda mode: None if mode == "fts" else FakeEmbedder(),
         refresh_if_compatible=lambda: None,
         resolve_requested_db_paths=lambda payload: [
             Path(path).resolve() for path in payload["db_paths"]
@@ -975,6 +978,53 @@ def test_run_server_rejects_duplicate_live_server(
 
     with pytest.raises(ValueError, match="already running.*127.0.0.1:12345"):
         server_module.run_server([db], host="127.0.0.1", port=0, device="cpu")
+
+
+def test_search_server_state_loads_embedder_lazily(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    created: list[tuple[str, str]] = []
+
+    def create_embedder(*, model_name: str, device: str) -> FakeEmbedder:
+        created.append((model_name, device))
+        return FakeEmbedder()
+
+    monkeypatch.setattr(server_module, "create_embedding_provider", create_embedder)
+    state = server_module.SearchServerState([db], device="cpu")
+
+    assert state._embedders == {}
+    assert state.embedder_for_mode("fts") is None
+    first = state.embedder_for_mode("vec")
+    second = state.embedder_for_mode("fts-vec")
+
+    assert first is second
+    assert created == [("fake", "cpu")]
+
+
+def test_server_roots_limits_to_requested_db_paths(
+    tmp_path: Path, sample_roots: tuple[Path, Path]
+) -> None:
+    db1 = tmp_path / "one.sqlite"
+    db2 = tmp_path / "two.sqlite"
+    build_db(db1, [sample_roots[0]])
+    build_db(db2, [sample_roots[1]])
+    handler = object.__new__(SearchRequestHandler)
+    state = SimpleNamespace(
+        refresh_if_compatible=lambda: None,
+        resolve_requested_db_paths=lambda payload: [
+            Path(path).resolve() for path in payload["db_paths"]
+        ],
+    )
+    cast(Any, handler).server = SimpleNamespace(state=state)
+
+    results = handler.handle_roots({"db_paths": [str(db2.resolve())]})
+
+    assert results[0]["db_path"] == str(db2.resolve())
+    assert results[0]["roots"][0]["root_path"] == str(sample_roots[1].resolve())
 
 
 def test_reloadable_db_set_refreshes_compatible_db_update(
@@ -1173,6 +1223,91 @@ def test_mcp_server_roots_tool(tmp_path: Path, sample_roots: tuple[Path, Path]) 
     assert '"root_path":' in payload
     assert '"file_count": 1' in payload
     assert '"chunk_count": 1' in payload
+
+
+def test_mcp_proxy_forwards_search_without_local_embedder(
+    tmp_path: Path,
+    sample_roots: tuple[Path, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    build_db(db, list(sample_roots))
+    calls: list[dict[str, Any]] = []
+    result = SearchResult(
+        db_path=str(db),
+        chunk_id=1,
+        path=str(sample_roots[0] / "search.md"),
+        relative_path="search.md",
+        chunk_index=0,
+        text="日本語の検索",
+        start_line=1,
+        end_line=1,
+        start_offset=0,
+        end_offset=6,
+        score=0.1,
+        source="vec",
+    )
+    monkeypatch.setattr(mcp_module, "server_url_health", lambda _: True)
+
+    def fake_search(server_url: str, **kwargs: Any) -> list[SearchResult]:
+        calls.append({"server_url": server_url, **kwargs})
+        return [result]
+
+    monkeypatch.setattr(mcp_module, "search_via_url", fake_search)
+    proxy = McpSearchProxy([db], server_url="http://127.0.0.1:8765")
+
+    rows = proxy.search({"query": "意味検索", "mode": "vec", "limit": 1})
+
+    assert rows[0]["relative_path"] == "search.md"
+    assert calls[0]["server_url"] == "http://127.0.0.1:8765"
+    assert calls[0]["db_paths"] == [db.resolve()]
+    assert calls[0]["vector_query"] == "意味検索"
+
+
+def test_mcp_proxy_kickstarts_launchd_service_and_waits(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    db = tmp_path / "index.sqlite"
+    starts: list[str] = []
+    waits: list[tuple[str, float]] = []
+    monkeypatch.setattr(mcp_module, "server_url_health", lambda _: False)
+    monkeypatch.setattr(
+        mcp_module,
+        "start_launchd_service",
+        lambda label: starts.append(label),
+    )
+
+    def wait(server_url: str, *, timeout: float) -> bool:
+        waits.append((server_url, timeout))
+        return True
+
+    monkeypatch.setattr(mcp_module, "wait_for_server_url", wait)
+    proxy = McpSearchProxy(
+        [db],
+        server_url="http://127.0.0.1:8765/",
+        launchd_label="local.local-doc-search.server",
+        server_start_timeout=12.0,
+    )
+
+    proxy.ensure_shared_server()
+
+    assert starts == ["local.local-doc-search.server"]
+    assert waits == [("http://127.0.0.1:8765", 12.0)]
+
+
+def test_mcp_proxy_requires_launchd_label_when_server_is_down(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(mcp_module, "server_url_health", lambda _: False)
+    proxy = McpSearchProxy(
+        [tmp_path / "index.sqlite"],
+        server_url="http://127.0.0.1:8765",
+    )
+
+    with pytest.raises(ValueError, match="configure --launchd-label"):
+        proxy.ensure_shared_server()
 
 
 def test_short_query_uses_like_fallback(tmp_path: Path, sample_roots: tuple[Path, Path]) -> None:

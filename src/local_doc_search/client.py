@@ -14,6 +14,7 @@ from .search import SearchMode, SearchResult
 REGISTRY_DIR = Path.home() / ".cache" / "local-doc-search" / "servers"
 HEALTH_RETRY_SECONDS = 3.0
 HEALTH_RETRY_INTERVAL_SECONDS = 0.1
+REQUEST_TIMEOUT_SECONDS = 300
 
 
 class ServerSearchError(RuntimeError):
@@ -126,12 +127,31 @@ def wait_for_server_health(registry: dict[str, Any]) -> bool:
 
 
 def server_health(registry: dict[str, Any]) -> bool:
-    url = f"http://{registry['host']}:{registry['port']}/health"
+    return server_url_health(f"http://{registry['host']}:{registry['port']}")
+
+
+def server_url_health(server_url: str) -> bool:
+    url = f"{server_url.rstrip('/')}/health"
     try:
         with urllib.request.urlopen(url, timeout=0.5) as response:
             return response.status == 200
     except (OSError, urllib.error.URLError):
         return False
+
+
+def wait_for_server_url(
+    server_url: str,
+    *,
+    timeout: float = HEALTH_RETRY_SECONDS,
+    interval: float = HEALTH_RETRY_INTERVAL_SECONDS,
+) -> bool:
+    deadline = time.monotonic() + timeout
+    while True:
+        if server_url_health(server_url):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(interval)
 
 
 def search_via_server(
@@ -146,14 +166,42 @@ def search_via_server(
     limit: int,
     candidates: int,
 ) -> list[SearchResult]:
-    url = f"http://{registry['host']}:{registry['port']}/search"
-    body = json.dumps(
+    return search_via_url(
+        f"http://{registry['host']}:{registry['port']}",
+        db_paths=db_paths,
+        requested_db_paths=registry.get("requested_db_paths"),
+        query=query,
+        vector_query=vector_query,
+        fts_query=fts_query,
+        fts_is_pattern=fts_is_pattern,
+        mode=mode,
+        limit=limit,
+        candidates=candidates,
+    )
+
+
+def search_via_url(
+    server_url: str,
+    *,
+    db_paths: list[Path] | None = None,
+    requested_db_paths: object = None,
+    query: str | None = None,
+    vector_query: str | None = None,
+    fts_query: str | None = None,
+    fts_is_pattern: bool = False,
+    mode: SearchMode,
+    limit: int,
+    candidates: int,
+) -> list[SearchResult]:
+    payload = post_json(
+        server_url,
+        "/search",
         {
             "query": query,
             "db_paths": (
                 [str(path) for path in normalize_db_paths(db_paths)]
                 if db_paths is not None
-                else registry.get("requested_db_paths")
+                else requested_db_paths
             ),
             "vector_query": vector_query,
             "fts_query": fts_query,
@@ -161,8 +209,26 @@ def search_via_server(
             "mode": mode,
             "limit": limit,
             "candidates": candidates,
-        }
-    ).encode("utf-8")
+        },
+    )
+    return [SearchResult(**item) for item in payload["results"]]
+
+
+def roots_via_url(server_url: str, *, db_paths: list[Path]) -> list[dict[str, Any]]:
+    payload = post_json(
+        server_url,
+        "/roots",
+        {"db_paths": [str(path) for path in normalize_db_paths(db_paths)]},
+    )
+    roots = payload.get("roots")
+    if not isinstance(roots, list):
+        raise ServerSearchError("local-doc-search server returned invalid roots data")
+    return roots
+
+
+def post_json(server_url: str, endpoint: str, payload: dict[str, Any]) -> dict[str, Any]:
+    url = f"{server_url.rstrip('/')}{endpoint}"
+    body = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
         data=body,
@@ -170,11 +236,17 @@ def search_via_server(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=30) as response:
+        with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         body = exc.read().decode("utf-8", errors="replace")
         raise ServerSearchError(
             f"local-doc-search server returned HTTP {exc.code}: {body}"
         ) from exc
-    return [SearchResult(**item) for item in payload["results"]]
+    except (OSError, urllib.error.URLError) as exc:
+        raise ServerSearchError(
+            f"Could not connect to local-doc-search server at {server_url}: {exc}"
+        ) from exc
+    if not isinstance(payload, dict):
+        raise ServerSearchError("local-doc-search server returned invalid JSON data")
+    return payload

@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import json
+import os
+import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
+from .client import (
+    roots_via_url,
+    search_via_url,
+    server_url_health,
+    wait_for_server_url,
+)
 from .codex_history import CODEX_HISTORY_DB, CODEX_HISTORY_INDEX_KIND
 from .db import (
     as_json,
@@ -205,8 +213,117 @@ class McpSearchServer:
         return ReloadableDbSet(normalized)
 
 
-def run_mcp_server(db_paths: list[Path], *, device: DeviceOption = "auto") -> None:
-    McpSearchServer(db_paths, device=device).serve()
+class McpSearchProxy(McpSearchServer):
+    def __init__(
+        self,
+        db_paths: list[Path],
+        *,
+        server_url: str,
+        launchd_label: str | None = None,
+        server_start_timeout: float = 60.0,
+    ) -> None:
+        self.db_paths = normalize_db_paths(db_paths)
+        if not self.db_paths:
+            raise ValueError("At least one --db is required")
+        if server_start_timeout <= 0:
+            raise ValueError("--server-start-timeout must be greater than zero")
+        self.server_url = server_url.rstrip("/")
+        self.launchd_label = launchd_label
+        self.server_start_timeout = server_start_timeout
+
+    def search(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        return self.search_server_paths(self.db_paths, arguments)
+
+    def codex_session_search(self, arguments: dict[str, Any]) -> list[dict[str, Any]]:
+        codex_db = CODEX_HISTORY_DB.expanduser()
+        validate_codex_history_db(codex_db)
+        return self.search_server_paths([codex_db], arguments)
+
+    def search_server_paths(
+        self,
+        db_paths: list[Path],
+        arguments: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        query = optional_argument_str(arguments, "query")
+        pattern = optional_argument_str(arguments, "pattern")
+        mode = parse_optional_mode(arguments.get("mode"))
+        resolved = resolve_search(query=query, pattern=pattern, mode=mode)
+        limit = int(arguments.get("limit", 10))
+        candidates = max(int(arguments.get("candidates", 50)), limit)
+        explain = bool(arguments.get("explain", False))
+        self.ensure_shared_server()
+        rows = search_via_url(
+            self.server_url,
+            db_paths=db_paths,
+            vector_query=resolved.vector_query,
+            fts_query=resolved.fts_query,
+            fts_is_pattern=resolved.fts_is_pattern,
+            mode=resolved.mode,
+            limit=limit,
+            candidates=candidates,
+        )
+        return [result_to_mcp_dict(row, explain=explain) for row in rows]
+
+    def roots(self) -> list[dict[str, Any]]:
+        self.ensure_shared_server()
+        return roots_via_url(self.server_url, db_paths=self.db_paths)
+
+    def ensure_shared_server(self) -> None:
+        if server_url_health(self.server_url):
+            return
+        if self.launchd_label is None:
+            raise ValueError(
+                f"Shared server is not available at {self.server_url}. "
+                "Start it or configure --launchd-label for automatic startup."
+            )
+        start_launchd_service(self.launchd_label)
+        if not wait_for_server_url(
+            self.server_url,
+            timeout=self.server_start_timeout,
+        ):
+            raise ValueError(
+                f"Shared server did not become ready at {self.server_url} within "
+                f"{self.server_start_timeout:g} seconds after starting "
+                f"launchd service {self.launchd_label}."
+            )
+
+
+def start_launchd_service(label: str) -> None:
+    if sys.platform != "darwin":
+        raise ValueError(
+            "--launchd-label automatic startup is only supported on macOS"
+        )
+    target = f"gui/{os.getuid()}/{label}"
+    completed = subprocess.run(
+        ["launchctl", "kickstart", target],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "unknown error"
+        raise ValueError(f"Could not start launchd service {target}: {detail}")
+
+
+def run_mcp_server(
+    db_paths: list[Path],
+    *,
+    device: DeviceOption = "auto",
+    server_url: str | None = None,
+    launchd_label: str | None = None,
+    server_start_timeout: float = 60.0,
+) -> None:
+    if server_url is None:
+        if launchd_label is not None:
+            raise ValueError("--launchd-label requires --server-url")
+        McpSearchServer(db_paths, device=device).serve()
+        return
+    McpSearchProxy(
+        db_paths,
+        server_url=server_url,
+        launchd_label=launchd_label,
+        server_start_timeout=server_start_timeout,
+    ).serve()
 
 
 def search_tool_definition() -> dict[str, Any]:
