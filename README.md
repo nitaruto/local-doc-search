@@ -147,12 +147,30 @@ Run a stdio MCP server for coding agents such as Codex.
 uv run local-doc-search mcp --db notes.sqlite --device auto
 ```
 
+To keep one embedding model shared across Codex threads, register a launchd-managed
+HTTP server and run the stdio MCP process in proxy mode:
+
+```bash
+uv run local-doc-search mcp \
+  --db notes.sqlite \
+  --server-url http://127.0.0.1:8765 \
+  --launchd-label local.local-doc-search.server
+```
+
+The proxy checks `/health` on the first tool call. If the server is down, it runs
+`launchctl kickstart gui/<uid>/local.local-doc-search.server`, waits up to 60 seconds,
+and then forwards the request. The HTTP server must be configured with every DB used
+by the MCP tools, including `~/.codex/local-doc-search/codex-history.sqlite` for
+`codex_session_search`. See
+[`docs/local-doc-search-server.plist.example`](docs/local-doc-search-server.plist.example)
+for a LaunchAgent template.
+
 Example Codex MCP configuration:
 
 ```toml
 [mcp_servers.local-doc-search]
 command = "uv"
-args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--server-url", "http://127.0.0.1:8765", "--launchd-label", "local.local-doc-search.server"]
 cwd = "/absolute/path/to/local_search"
 ```
 

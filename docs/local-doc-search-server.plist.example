@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>local.local-doc-search.server</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/absolute/path/to/uv</string>
+    <string>run</string>
+    <string>local-doc-search</string>
+    <string>server</string>
+    <string>--db</string>
+    <string>/absolute/path/to/notes.sqlite</string>
+    <string>--db</string>
+    <string>/Users/USERNAME/.codex/local-doc-search/codex-history.sqlite</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>8765</string>
+    <string>--device</string>
+    <string>auto</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/absolute/path/to/local_search</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/local-doc-search-server.stdout.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/local-doc-search-server.stderr.log</string>
+</dict>
+</plist>

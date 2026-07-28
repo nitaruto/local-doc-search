@@ -404,13 +404,17 @@ uv run local-doc-search search --query "検索語" --mode vec
 server discovery:
 
 - `~/.cache/local-doc-search/servers/<db-set-hash>.json` にhost/port/DB fingerprintを保存する。
-- serverは `/health` と `/search` を提供する。
+- serverは `/health`, `/search`, `/roots` を提供する。
 - serverは `127.0.0.1` bindを既定とし、初期実装ではdaemon化しない。
 - registry上のfingerprintが古くてもlive serverへ問い合わせる。server側でDB更新を検出してreload判定する。
 
 注意:
 
-- server起動時にDB metadataを読み、vector系検索用のembedderを1回だけloadする。
+- server起動時はDB metadataだけを読み、embedderは最初のvector系検索時に遅延loadする。
+- FTS検索と `/roots` はembedderをloadしない。
+- 同じmodel/deviceのembedderはserver process内で共有する。
+- 複数clientからのvector系検索は直列化する。モデル初期化とMPS推論の競合を避けるためである。
+- 最初のvector系検索にはモデルload時間が加わる。HTTP request timeoutは300秒。
 - serverは検索ごとにDB fileのmtime/sizeを確認し、起動後にDBが変わっていればmetadataを再読込する。
 - embedding metadataが起動時と互換ならfingerprintを更新し、embedderを維持したまま検索を続ける。
 - embedding metadataが変わり互換性が崩れた場合はserver再起動を要求する。
@@ -424,12 +428,41 @@ server discovery:
 uv run local-doc-search mcp --db notes.sqlite --device auto
 ```
 
+`--server-url` を指定するとstdio MCPは軽量なHTTP proxyとして動作する。
+このmodeではMCP process自身はembedding modelをloadせず、複数のCodex threadから1つのHTTP serverを共有できる。
+
+```bash
+uv run local-doc-search mcp \
+  --db notes.sqlite \
+  --server-url http://127.0.0.1:8765 \
+  --launchd-label local.local-doc-search.server \
+  --server-start-timeout 60
+```
+
+proxy mode:
+
+- `search`, `codex_session_search`, `roots` を共有HTTP serverへ転送する。
+- 最初のtool callで `/health` を確認する。MCP初期化だけでは共有serverを起動しない。
+- server停止中かつ`--launchd-label`指定時は、macOSで`launchctl kickstart gui/<uid>/<label>`を実行する。
+- `kickstart`には`-k`を付けない。既に動作中のserverを再起動しないためである。
+- 起動後は`--server-start-timeout`秒まで `/health` をpollする。既定値は60秒。
+- `--launchd-label`なしでserverが停止している場合はtool errorを返す。
+- `--device`は直接MCP modeでのみ使用する。proxy modeのdeviceは共有server側の`--device`で決まる。
+- `search`用DBはMCPの`--db`で指定する。そのすべてが共有serverのDB集合に含まれていなければならない。
+- `codex_session_search`を使う場合、固定DB `~/.codex/local-doc-search/codex-history.sqlite`も共有serverのDB集合に含める。
+- 共有serverの全DBはembedding metadata互換である必要がある。
+
+LaunchAgentは一度`launchctl bootstrap gui/$(id -u) <plist>`で登録する。
+以後は各MCP processが必要時に`kickstart`できる。
+設定例は `docs/local-doc-search-server.plist.example` を参照する。
+plistの`ProgramArguments`では`command -v uv`で得た`uv`の絶対pathを指定する。
+
 Codex設定例:
 
 ```toml
 [mcp_servers.local-doc-search]
 command = "uv"
-args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--device", "auto"]
+args = ["run", "local-doc-search", "mcp", "--db", "/absolute/path/to/notes.sqlite", "--server-url", "http://127.0.0.1:8765", "--launchd-label", "local.local-doc-search.server"]
 cwd = "/absolute/path/to/local_search"
 ```
 
