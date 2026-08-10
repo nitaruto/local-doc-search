@@ -27,6 +27,25 @@ CODEX_SESSIONS_ROOT = Path.home() / ".codex" / "sessions"
 CODEX_HISTORY_DB = Path.home() / ".codex" / "local-doc-search" / "codex-history.sqlite"
 CODEX_HISTORY_MODEL = "cl-nagoya/ruri-v3-310m"
 CODEX_TURN_MAX_CHARS = MAX_CHARS
+NON_HUMAN_USER_MESSAGE_PREFIXES = (
+    "# AGENTS.md instructions",
+    "The following is the Codex agent history",
+    "Automation:",
+    "<app-context",
+    "<codex_delegation",
+    "<collaboration_mode",
+    "<environment_context",
+    "<heartbeat",
+    "<model_switch",
+    "<permissions",
+    "<plugins_instructions",
+    "<recommended_plugins",
+    "<skill",
+    "<subagent_notification",
+    "<system_reminder",
+    "<turn_aborted",
+    "<user_action",
+)
 
 
 @dataclass(frozen=True)
@@ -79,6 +98,7 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
     current_turn_id: str | None = None
     turns: list[CodexTurn] = []
     is_subagent_session = False
+    current_turn_has_human_user = False
 
     with path.open(encoding="utf-8") as handle:
         for line_no, line in enumerate(handle, start=1):
@@ -96,11 +116,13 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
                 session_id = optional_payload_str(payload, "id")
                 cwd = optional_payload_str(payload, "cwd") or ""
                 is_subagent_session = is_subagent_source(payload.get("source"))
+                current_turn_has_human_user = False
                 continue
             if is_subagent_session:
                 continue
             if item_type == "event_msg" and payload.get("type") == "task_started":
                 current_turn_id = optional_payload_str(payload, "turn_id")
+                current_turn_has_human_user = False
                 continue
             if item_type != "response_item" or payload.get("type") != "message":
                 continue
@@ -110,10 +132,14 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
             role = optional_payload_str(payload, "role")
             if role not in {"user", "assistant"}:
                 continue
-            if role == "assistant" and payload.get("phase") != "final_answer":
-                continue
             text = message_text(payload.get("content"))
-            if not text or should_skip_user_message(role, text):
+            if not text:
+                continue
+            if role == "user":
+                if should_skip_user_message(role, text):
+                    continue
+                current_turn_has_human_user = True
+            elif payload.get("phase") != "final_answer" or not current_turn_has_human_user:
                 continue
             turns.append(
                 CodexTurn(
@@ -127,6 +153,8 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
                     line_no=line_no,
                 )
             )
+            if role == "assistant":
+                current_turn_has_human_user = False
     return turns
 
 
@@ -318,10 +346,8 @@ def should_skip_user_message(role: str, text: str) -> bool:
     if role != "user":
         return False
     stripped = text.lstrip()
-    return (
-        stripped.startswith("# AGENTS.md instructions")
-        or "<environment_context>" in stripped
-        or stripped.startswith("The following is the Codex agent history")
+    return "<environment_context>" in stripped or stripped.startswith(
+        NON_HUMAN_USER_MESSAGE_PREFIXES
     )
 
 

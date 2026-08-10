@@ -1543,6 +1543,61 @@ def test_parse_codex_session_file_skips_subagent_sessions(tmp_path: Path) -> Non
     assert parse_codex_session_file(session) == []
 
 
+def test_parse_codex_session_file_keeps_only_human_turns_and_their_final_answers(
+    tmp_path: Path,
+) -> None:
+    session = tmp_path / "sessions" / "rollout-human-turns.jsonl"
+    rows = [codex_session_rows()[0]]
+
+    def task_started(turn_id: str) -> dict[str, object]:
+        return {
+            "timestamp": "2026-05-02T00:00:01Z",
+            "type": "event_msg",
+            "payload": {"type": "task_started", "turn_id": turn_id},
+        }
+
+    def message(role: str, text: str, *, phase: str | None = None) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "type": "message",
+            "role": role,
+            "content": [{"type": "input_text", "text": text}],
+        }
+        if phase is not None:
+            payload["phase"] = phase
+        return {
+            "timestamp": "2026-05-02T00:00:02Z",
+            "type": "response_item",
+            "payload": payload,
+        }
+
+    rows.extend(
+        [
+            task_started("automation-turn"),
+            message("user", "<heartbeat><automation_id>daily</automation_id></heartbeat>"),
+            message("assistant", "自動実行結果", phase="final_answer"),
+            task_started("human-turn"),
+            message("user", "人間が入力した質問"),
+            message("user", "<skill><name>history-search</name></skill>"),
+            message(
+                "user",
+                '<subagent_notification>{"status":"completed"}</subagent_notification>',
+            ),
+            message("assistant", "質問への最終回答", phase="final_answer"),
+            task_started("scheduled-turn"),
+            message("user", "Automation: 日次処理"),
+            message("assistant", "日次処理の結果", phase="final_answer"),
+        ]
+    )
+    write_jsonl(session, rows)
+
+    turns = parse_codex_session_file(session)
+
+    assert [(turn.role, turn.text, turn.turn_id) for turn in turns] == [
+        ("user", "人間が入力した質問", "human-turn"),
+        ("assistant", "質問への最終回答", "human-turn"),
+    ]
+
+
 def test_index_codex_sessions_stores_turn_metadata(tmp_path: Path) -> None:
     root = tmp_path / "sessions"
     session = root / "2026" / "05" / "02" / "rollout-test.jsonl"
