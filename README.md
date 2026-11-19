@@ -121,6 +121,22 @@ those turns; runtime-injected automation, heartbeat, skill, and subagent message
 are skipped. If the input root does not exist, `codex-index` fails before creating
 or rebuilding the DB.
 
+Both `.jsonl` and `.jsonl.zst` sessions are indexed. Install `zstd`
+(for example, `brew install zstd` on macOS) and make it available on the
+indexer's PATH to include compressed files. If both versions of a session
+file coexist in the same directory, the plain JSONL is preferred. A regular
+incremental `codex-index` run picks up newly supported files without a rebuild.
+The returned `line_no` refers to the decompressed JSONL. TUI previews show
+the matching chunk for compressed sessions, and the pager opens a temporary
+decompressed copy at that line.
+
+To also include archived sessions, pass both roots on every update, since the
+index removes paths outside the supplied roots:
+
+```bash
+uv run local-doc-search codex-index --root ~/.codex/sessions --root ~/.codex/archived_sessions
+```
+
 ```bash
 uv run local-doc-search codex-index --rebuild
 uv run local-doc-search codex-server --device auto

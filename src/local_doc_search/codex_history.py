@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
+import subprocess
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -60,15 +64,47 @@ class CodexTurn:
     line_no: int
 
 
+def is_compressed_codex_session(path: Path) -> bool:
+    return path.name.endswith(".jsonl.zst")
+
+
+def codex_decompression_command(path: Path) -> list[str]:
+    executable = shutil.which("zstd")
+    if executable is None:
+        raise ValueError("Install zstd to read compressed Codex sessions (.jsonl.zst).")
+    return [executable, "-d", "-c", "--", str(path)]
+
+
+@contextmanager
+def open_codex_session(path: Path) -> Iterator[Iterable[str]]:
+    if not is_compressed_codex_session(path):
+        with path.open(encoding="utf-8") as handle:
+            yield handle
+        return
+
+    with subprocess.Popen(
+        codex_decompression_command(path), stdout=subprocess.PIPE, encoding="utf-8"
+    ) as process:
+        assert process.stdout is not None
+        with process.stdout:
+            yield process.stdout
+        if process.wait() != 0:
+            raise ValueError(f"Could not decompress Codex session: {path}")
+
+
 def iter_codex_session_files(roots: list[Path]) -> list[Path]:
     paths: set[Path] = set()
     for root in validate_codex_roots(roots):
-        if root.is_file() and root.suffix == ".jsonl":
+        if root.is_file():
             paths.add(root)
             continue
-        if root.is_dir():
-            paths.update(path.resolve() for path in root.rglob("*.jsonl"))
-    return sorted(paths)
+        for pattern in ("*.jsonl", "*.jsonl.zst"):
+            paths.update(path.resolve() for path in root.rglob(pattern) if path.is_file())
+    return sorted(
+        path
+        for path in paths
+        if not is_compressed_codex_session(path) or path.with_suffix("") not in paths
+    )
 
 
 def validate_codex_roots(roots: list[Path]) -> list[Path]:
@@ -81,8 +117,8 @@ def validate_codex_roots(roots: list[Path]) -> list[Path]:
             raise ValueError(f"Codex sessions root does not exist: {expanded}")
         resolved = expanded.resolve()
         if resolved.is_file():
-            if resolved.suffix != ".jsonl":
-                raise ValueError(f"Codex session file must be .jsonl: {resolved}")
+            if resolved.suffix != ".jsonl" and not is_compressed_codex_session(resolved):
+                raise ValueError(f"Codex session file must be .jsonl or .jsonl.zst: {resolved}")
             validated.append(resolved)
             continue
         if resolved.is_dir():
@@ -100,7 +136,7 @@ def parse_codex_session_file(path: Path) -> list[CodexTurn]:
     is_subagent_session = False
     current_turn_has_human_user = False
 
-    with path.open(encoding="utf-8") as handle:
+    with open_codex_session(path) as handle:
         for line_no, line in enumerate(handle, start=1):
             try:
                 item = json.loads(line)
@@ -171,6 +207,9 @@ def index_codex_sessions(
         raise ValueError("--rebuild and --rebuild-offline cannot be used together")
     roots = validate_codex_roots(roots)
     paths = iter_codex_session_files(roots)
+    compressed = next((path for path in paths if is_compressed_codex_session(path)), None)
+    if compressed is not None:
+        codex_decompression_command(compressed)
     ensure_schema(con, embedding_dim=embedder.dim, embedding_model=embedder.model_name)
     set_embedding_metadata(
         con,
@@ -188,9 +227,6 @@ def index_codex_sessions(
 
     if progress is not None:
         progress.on_scan_complete(len(paths))
-    removed = remove_missing_files(
-        con, {str(path) for path in paths}, commit_each_file=commit_per_file
-    )
     indexed_files = 0
     skipped_files = 0
     chunk_count = 0
@@ -221,6 +257,9 @@ def index_codex_sessions(
         if progress is not None:
             progress.on_file_done(path=indexed.path, status="indexed", chunks=len(chunks))
 
+    removed = remove_missing_files(
+        con, {str(path) for path in paths}, commit_each_file=commit_per_file
+    )
     return IndexStats(
         scanned_files=len(paths),
         excluded_files=0,
@@ -257,13 +296,14 @@ def is_codex_file_unchanged_by_stat(
 
 
 def codex_indexed_file(path: Path, roots: list[Path]) -> tuple[IndexedFile | None, list[Chunk]]:
-    data = path.read_bytes()
+    stat = path.stat()
     turns = parse_codex_session_file(path)
     if not turns:
         return None, []
+    with path.open("rb") as handle:
+        content_hash = hashlib.file_digest(handle, "sha256").hexdigest()
     root_path = matching_root(path, roots)
     relative_path = path.relative_to(root_path) if root_path is not None else Path(path.name)
-    stat = path.stat()
     chunks: list[Chunk] = []
     for turn in turns:
         for chunk in chunk_codex_turn(turn):
@@ -275,7 +315,7 @@ def codex_indexed_file(path: Path, roots: list[Path]) -> tuple[IndexedFile | Non
             relative_path=relative_path,
             size=stat.st_size,
             mtime_ns=stat.st_mtime_ns,
-            content_hash=hashlib.sha256(data).hexdigest(),
+            content_hash=content_hash,
             text="",
         ),
         chunks,

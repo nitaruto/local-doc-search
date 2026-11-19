@@ -238,8 +238,10 @@ hybrid時の入力:
 - 固定DB pathは `~/.codex/local-doc-search/codex-history.sqlite`。
 - 既定の入力rootは `~/.codex/sessions`。
 - 既定モデルは `cl-nagoya/ruri-v3-310m`。
-- `--root` で別のsession rootまたは `.jsonl` ファイルを指定できる。
-- rootが存在しない場合、またはfile rootが `.jsonl` ではない場合は、DB作成や `--rebuild` の前にエラーで停止する。
+- `--root` でディレクトリ、`.jsonl`、または `.jsonl.zst` を指定できる。アーカイブを含めるには、通常のsessionsとarchived_sessionsの両方を明示する。
+- ディレクトリ以下では両形式を探索し、同じ場所に両方があれば非圧縮版を優先する。圧縮版の読み込みにはPATH上の `zstd` が必要。
+- 圧縮版を展開しながら既存と同じ抽出処理に通す。展開が失敗したファイルは登録しない。増分更新はファイル単位でコミットし、見つからなくなったパスは入力の処理が完了してから削除する。
+- 指定された入力が存在しない、またはファイルの拡張子が対象外の場合は、DB作成や再構築の前にエラーで停止する。
 - `--model`, `--device`, `--batch-size`, `--rebuild` は通常indexと同様に使える。
 - DB metadataに `index_kind=codex-history` を保存する。
 
@@ -247,7 +249,7 @@ hybrid時の入力:
 
 - `session_meta.payload.id` を `session_id` として保存する。
 - `session_meta.payload.cwd` を `cwd` として保存する。
-- index対象messageのJSONL内1-origin行番号を `line_no` として保存する。
+- index対象messageの展開後JSONL内の1始まりの行番号を `line_no` として保存する。
 - `response_item.payload.type == "message"` のうち、`role=user` の実指示をindexする。
 - `role=assistant` は `phase=final_answer` のみindexする。
 - `phase=commentary` の途中経過、developer message、tool call/output、reasoning、subagent/guardian session、AGENTS/env初期contextはindexしない。

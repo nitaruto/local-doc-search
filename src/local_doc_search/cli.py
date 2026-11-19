@@ -8,6 +8,7 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from shlex import quote
+from tempfile import TemporaryDirectory
 from time import perf_counter
 from typing import Annotated, Any, cast
 
@@ -34,7 +35,9 @@ from .codex_history import (
     CODEX_HISTORY_INDEX_KIND,
     CODEX_HISTORY_MODEL,
     CODEX_SESSIONS_ROOT,
+    codex_decompression_command,
     index_codex_sessions,
+    is_compressed_codex_session,
     validate_codex_roots,
 )
 from .db import (
@@ -547,7 +550,7 @@ def codex_index_cmd(
         list[Path] | None,
         typer.Option(
             "--root",
-            help="Codex sessions root or JSONL file. Defaults to ~/.codex/sessions.",
+            help="Codex sessions directory or .jsonl/.jsonl.zst file (default: ~/.codex/sessions).",
         ),
     ] = None,
     model: Annotated[str, typer.Option("--model", help="sentence-transformers model name.")] = (
@@ -990,6 +993,10 @@ item = json.loads(base64.urlsafe_b64decode(sys.argv[1]).decode("utf-8"))
 context = int(sys.argv[2])
 path = item.get("session_path") or item["path"]
 line_no = item.get("line_no")
+if item.get("session_path") and path.endswith(".jsonl.zst"):
+    print(f"{path}:{line_no}")
+    print(item["text"])
+    sys.exit(0)
 start = max(int(line_no or item["start_line"]), 1)
 end = start if line_no is not None else max(int(item["end_line"]), start)
 before = max(context // 6, 3)
@@ -1015,15 +1022,25 @@ def open_result_in_pager(row: SearchResult, *, pager: str) -> None:
     executable = shutil.which(pager)
     if executable is None:
         raise typer.BadParameter(f"Pager/editor command not found: {pager}")
-    path = row.session_path or row.path
+    path = Path(row.session_path or row.path)
     start_line = str(max(row.line_no or row.start_line, 1))
     if Path(executable).name in {"less", "vim", "nvim", "vi"}:
-        cmd = [executable, f"+{start_line}", path]
+        cmd = [executable, f"+{start_line}"]
     elif Path(executable).name == "bat":
-        cmd = [executable, "--style=numbers", "--highlight-line", start_line, path]
+        cmd = [executable, "--style=numbers", "--highlight-line", start_line]
     else:
-        cmd = [executable, path]
-    raise typer.Exit(subprocess.run(cmd, check=False).returncode)
+        cmd = [executable]
+    if not row.session_path or not is_compressed_codex_session(path):
+        raise typer.Exit(subprocess.run([*cmd, str(path)], check=False).returncode)
+
+    with TemporaryDirectory(prefix="local-doc-search-") as directory:
+        expanded = Path(directory) / path.with_suffix("").name
+        try:
+            with expanded.open("wb") as handle:
+                subprocess.run(codex_decompression_command(path), stdout=handle, check=True)
+        except (ValueError, OSError, subprocess.CalledProcessError) as exc:
+            raise typer.BadParameter(f"Could not open compressed Codex session: {exc}") from exc
+        raise typer.Exit(subprocess.run([*cmd, str(expanded)], check=False).returncode)
 
 
 def output_results(rows: Sequence[SearchResult], *, json_output: bool, explain: bool) -> None:

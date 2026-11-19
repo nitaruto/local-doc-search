@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import sqlite3
+import subprocess
 from pathlib import Path
 from subprocess import CompletedProcess
 from threading import Lock
@@ -1648,6 +1650,36 @@ def test_codex_index_fast_skips_unchanged_files(tmp_path: Path) -> None:
 
     assert second.indexed_files == 0
     assert second.skipped_files == 1
+
+
+@pytest.mark.skipif(shutil.which("zstd") is None, reason="zstd is required for compressed sessions")
+def test_codex_index_follows_compressed_session(tmp_path: Path) -> None:
+    root = tmp_path / "sessions"
+    session = root / "rollout-test.jsonl"
+    write_jsonl(session, codex_session_rows())
+    compressed = session.with_suffix(".jsonl.zst")
+    subprocess.run(["zstd", "-q", "-o", str(compressed), str(session)], check=True)
+
+    with connect(tmp_path / "history.sqlite") as con:
+        first = index_codex_sessions(con, roots=[root], embedder=FakeEmbedder())
+        assert first.scanned_files == first.indexed_files == 1
+        assert con.execute("SELECT path FROM files").fetchone()[0] == str(session)
+        session.unlink()
+
+        updated = index_codex_sessions(con, roots=[root, compressed], embedder=FakeEmbedder())
+        assert updated.scanned_files == updated.indexed_files == updated.removed_files == 1
+        results = search(con, query="検索", mode="fts", limit=10, candidates=10, embedder=None)
+        assert {(row.role, row.line_no) for row in results} == {("user", 4), ("assistant", 6)}
+        assert len(results) == 2
+        assert {row.session_path for row in results} == {str(compressed)}
+
+        unchanged = index_codex_sessions(con, roots=[compressed], embedder=FakeEmbedder())
+        assert unchanged.skipped_files == 1
+
+        compressed.write_bytes(b"corrupt compressed file")
+        with pytest.raises(ValueError, match="Could not decompress Codex session"):
+            index_codex_sessions(con, roots=[root], embedder=FakeEmbedder())
+        assert con.execute("SELECT count(*) FROM chunks").fetchone()[0] == 2
 
 
 def test_codex_index_rebuild_offline_commits_clear_and_each_file(tmp_path: Path) -> None:
